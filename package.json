@@ -1,8 +1,8 @@
 {
-  "name": "wxt-vue-starter",
-  "description": "manifest.json description",
+  "name": "shotly",
+  "description": "Shotly — modern whole-page screenshot tool for Chrome. Privacy-first: screenshots never leave your device.",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -12,14 +12,20 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "vue-tsc --noEmit",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
     "vue": "^3.5.29"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.280",
     "@wxt-dev/module-vue": "^1.0.3",
+    "happy-dom": "^15.11.7",
     "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
     "vue-tsc": "^3.2.5",
     "wxt": "^0.20.27"
   }
