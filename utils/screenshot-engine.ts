@@ -213,9 +213,11 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
       await waitForNetworkIdle();
       await sleep(PER_SEGMENT_BUFFER_MS);
 
-      // In production, this is where the content script notifies the bg port
-      // and awaits the captured dataUrl back. For D+1 we emit a synthetic
-      // placeholder so the pipeline can be smoke-tested without bg hookup.
+      // D+2: this is the slot where the content script receives the real
+      // dataUrl from bg (chrome.tabs.captureVisibleTab). The chunk passed
+      // to ctx.onChunk() carries the synthetic placeholder dataUrl only so
+      // the engine stays pure / testable; the real dataUrl flows via the
+      // content<->bg port. See entrypoints/content.ts `handleStartCapture`.
       const syntheticDataUrl = await syntheticChunkPlaceholder(seg);
       const chunk: ScreenshotChunk = {
         index: seg.index,
@@ -245,12 +247,15 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
 /**
  * Stitch chunks into a single image via OffscreenCanvas.
  *
- * D+1 stub: validates inputs and constructs the canvas. The real
- * `createImageBitmap` + `drawImage` loop lands in D+2 once the offscreen
- * document is wired up.
+ * D+2 status: the production path runs in the offscreen document
+ * (see entrypoints/offscreen-main.ts) because MV3 Service Workers cannot
+ * use DOM. This function is retained as a same-process fallback for
+ *   (a) unit tests that run under happy-dom (no chrome.offscreen), and
+ *   (b) future single-process variants (e.g. Firefox MV2 if we ship there).
  *
- * Memory note: a 1920x50000 RGBA canvas = ~384MB. We log the estimate so
- * the PoC on D+3 can confirm Chrome doesn't OOM-kill the offscreen doc.
+ * Memory note: a 1920×50_000 RGBA canvas = ~384MB. Chrome WILL OOM-kill the
+ * offscreen doc beyond that, so HARD_PAGE_LIMIT_PX = 50_000 is enforced
+ * upstream in the content script.
  */
 export async function stitchChunks(
   chunks: ScreenshotChunk[],
@@ -259,7 +264,7 @@ export async function stitchChunks(
   const totalPx = plan.viewportWidth * plan.totalHeight;
   const estMb = (totalPx * 4) / (1024 * 1024);
   console.info(
-    `[shotly] stitching ${chunks.length} chunks → ${plan.viewportWidth}x${plan.totalHeight} (~${estMb.toFixed(1)} MB)`,
+    `[shotly] (fallback) stitching ${chunks.length} chunks → ${plan.viewportWidth}x${plan.totalHeight} (~${estMb.toFixed(1)} MB)`,
   );
 
   if (typeof OffscreenCanvas === 'undefined') {
@@ -270,9 +275,24 @@ export async function stitchChunks(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('[shotly] 2d context unavailable on OffscreenCanvas');
 
+  // Fill with neutral background so partial stitches don't show transparent stripes
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, plan.viewportWidth, plan.totalHeight);
+
   for (const chunk of chunks) {
-    const bitmap = await createImageBitmap(await (await fetch(chunk.dataUrl)).blob());
-    ctx.drawImage(bitmap, 0, chunk.index * plan.viewportHeight);
+    const bitmap = await createImageBitmap(
+      await (await fetch(chunk.dataUrl)).blob(),
+    );
+    const offsetY = chunk.index * plan.viewportHeight;
+    const drawHeight = Math.min(
+      chunk.segmentHeight,
+      plan.totalHeight - offsetY,
+    );
+    ctx.drawImage(
+      bitmap,
+      0, 0, bitmap.width, drawHeight,
+      0, offsetY, plan.viewportWidth, drawHeight,
+    );
     bitmap.close();
   }
 

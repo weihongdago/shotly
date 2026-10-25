@@ -1,23 +1,222 @@
-import { describe, expect, it } from 'vitest';
-import { theme, themeCssVars } from '../theme';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  countCrossOriginIframes,
+  installIframePlaceholders,
+  restoreIframes,
+  type PlaceholderRecord,
+} from '../iframe-placeholder';
 
-describe('theme tokens (architecture v1.2 §4.5)', () => {
-  it('light mode brand uses teal-700 for WCAG AA contrast', () => {
-    expect(theme.light.brand).toBe('#0F766E');
-    expect(theme.light.brandName).toBe('teal-700');
-    expect(theme.light.brandFg).toBe('#FFFFFF');
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function makeIframe(src: string, isCrossOrigin = true): HTMLIFrameElement {
+  const iframe = document.createElement('iframe');
+  iframe.src = src;
+  Object.defineProperty(iframe, 'contentDocument', {
+    get() {
+      if (isCrossOrigin) throw new DOMException('cross-origin', 'SecurityError');
+      return {} as Document;
+    },
+    configurable: true,
+  });
+  Object.defineProperty(iframe, 'getBoundingClientRect', {
+    value: () => ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300, x: 0, y: 0, toJSON: () => {} }),
+    configurable: true,
+  });
+  return iframe;
+}
+
+function clearBody() {
+  document.body.innerHTML = '';
+}
+
+// ─── tests ───────────────────────────────────────────────────────────────────
+
+describe('iframe-placeholder (architecture §3.2)', () => {
+  beforeEach(() => {
+    clearBody();
+    Object.defineProperty(window, 'location', {
+      value: { href: 'https://example.com/' },
+      writable: true,
+      configurable: true,
+    });
   });
 
-  it('dark mode brand uses teal-500 for high contrast on dark bg', () => {
-    expect(theme.dark.brand).toBe('#14B8A6');
-    expect(theme.dark.brandName).toBe('teal-500');
-    expect(theme.dark.brandFg).toBe('#0A0A0A');
+  afterEach(clearBody);
+
+  it('returns empty array when no iframes', () => {
+    expect(installIframePlaceholders()).toEqual([]);
   });
 
-  it('theme CSS vars expose all tokens', () => {
-    const css = themeCssVars('light');
-    expect(css).toContain('--shotly-brand:#0F766E');
-    expect(css).toContain('--shotly-text:');
-    expect(css).toContain('--shotly-shadow:');
+  it('leaves same-origin iframes alone', () => {
+    const iframe = makeIframe('https://example.com/embed', false);
+    document.body.append(iframe);
+    expect(installIframePlaceholders()).toEqual([]);
+    expect(iframe.parentNode).toBe(document.body);
+  });
+
+  it('replaces cross-origin iframe with placeholder', () => {
+    const iframe = makeIframe('https://youtube.com/embed/abc', true);
+    document.body.append(iframe);
+    const records = installIframePlaceholders();
+    expect(records).toHaveLength(1);
+    const rec = records[0];
+    expect(rec.iframe).toBe(iframe);
+    expect(rec.placeholder.classList.contains('shotly-iframe-placeholder')).toBe(true);
+    expect(rec.placeholder.getAttribute('data-shotly-placeholder')).toBe('true');
+    expect(rec.placeholder.parentNode).toBe(document.body);
+    expect(iframe.parentNode).toBeNull();
+  });
+
+  it('placeholder has 4px mint left border (#2DD4BF)', () => {
+    const iframe = makeIframe('https://youtube.com/embed/xyz', true);
+    document.body.append(iframe);
+    const [rec] = installIframePlaceholders();
+    expect(rec.placeholder.style.borderLeft).toContain('4px');
+    expect(rec.placeholder.style.borderLeft).toContain('#2DD4BF');
+  });
+
+  it('placeholder shows hostname in text', () => {
+    const iframe = makeIframe('https://vimeo.com/video/1', true);
+    document.body.append(iframe);
+    const [rec] = installIframePlaceholders();
+    expect(rec.placeholder.innerHTML).toContain('vimeo.com');
+    expect(rec.placeholder.innerHTML).toContain('📎');
+    expect(rec.placeholder.innerHTML).toContain('(embedded)');
+  });
+
+  it('hostname is URL-parsed (query strings do not leak into display)', () => {
+    // Hostnames cannot contain <, >, ", ' — URL parser strips them.
+    // Verify a query with bad chars does NOT pollute the displayed hostname.
+    const iframe = makeIframe('https://malicious.evil.com/embed?id=<bad>"\'x', true);
+    document.body.append(iframe);
+    const [rec] = installIframePlaceholders();
+    expect(rec.placeholder.innerHTML).toContain('malicious.evil.com');
+    // No raw angle brackets or quotes in the rendered HTML
+    expect(rec.placeholder.innerHTML).not.toContain('<bad>');
+    expect(rec.placeholder.innerHTML).not.toContain('"<');
+  });
+
+  it('placeholder always has a hostname (empty src → falls back to location hostname)', () => {
+    // happy-dom normalizes empty src to the location URL, so hostname is non-empty.
+    // Implementation: `hostname || 'inline-frame'` guarantees we never render empty.
+    const iframe = makeIframe('', true);
+    document.body.append(iframe);
+    const [rec] = installIframePlaceholders();
+    expect(rec.placeholder.innerHTML).toMatch(/(localhost|inline-frame)/);
+  });
+
+  it('placeholder has min dimensions (width>=120, height>=60)', () => {
+    const iframe = makeIframe('https://youtube.com/embed/1', true);
+    Object.defineProperty(iframe, 'getBoundingClientRect', {
+      value: () => ({ width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10, x: 0, y: 0, toJSON: () => {} }),
+      configurable: true,
+    });
+    document.body.append(iframe);
+    const [rec] = installIframePlaceholders();
+    expect(rec.placeholder.style.width).toContain('120px');
+    expect(rec.placeholder.style.height).toContain('60px');
+  });
+
+  it('restoreIframes puts iframe back at original position', () => {
+    const iframe = makeIframe('https://youtube.com/embed/abc', true);
+    document.body.append(iframe);
+    const records = installIframePlaceholders();
+    expect(iframe.parentNode).toBeNull();
+    restoreIframes(records);
+    expect(iframe.parentNode).toBe(document.body);
+  });
+
+  it('restoreIframes restores inline display style', () => {
+    const iframe = makeIframe('https://youtube.com/embed/abc', true);
+    iframe.style.display = 'block';
+    document.body.append(iframe);
+    const records = installIframePlaceholders();
+    restoreIframes(records);
+    expect(iframe.style.display).toBe('block');
+  });
+
+  it('restoreIframes is idempotent (second call is no-op)', () => {
+    const iframe = makeIframe('https://youtube.com/embed/abc', true);
+    document.body.append(iframe);
+    const records = installIframePlaceholders();
+    restoreIframes(records);
+    expect(() => restoreIframes(records)).not.toThrow();
+  });
+
+  it('handles multiple cross-origin iframes', () => {
+    const a = makeIframe('https://youtube.com/embed/1', true);
+    const b = makeIframe('https://vimeo.com/video/2', true);
+    document.body.append(a, b);
+    const records = installIframePlaceholders();
+    expect(records).toHaveLength(2);
+    expect(a.parentNode).toBeNull();
+    expect(b.parentNode).toBeNull();
+  });
+
+  it('mixed same-origin + cross-origin → only cross replaced', () => {
+    const same = makeIframe('https://example.com/embed', false);
+    const cross = makeIframe('https://youtube.com/embed/abc', true);
+    document.body.append(same, cross);
+    const records = installIframePlaceholders();
+    expect(records).toHaveLength(1);
+    expect(records[0].iframe).toBe(cross);
+    expect(same.parentNode).toBe(document.body);
+    expect(cross.parentNode).toBeNull();
+  });
+
+  it('preserves nextSibling for accurate restoration', () => {
+    clearBody();
+    const iframe = makeIframe('https://youtube.com/embed/1', true);
+    const tail = document.createElement('div');
+    document.body.append(iframe, tail);
+    const records = installIframePlaceholders();
+    expect(records[0].nextSibling).toBe(tail);
+    restoreIframes(records);
+    // After restore, tail should still come right after iframe
+    expect(iframe.nextSibling).toBe(tail);
   });
 });
+
+describe('countCrossOriginIframes (architecture §3.2 telemetry)', () => {
+  beforeEach(() => clearBody());
+  afterEach(() => clearBody());
+
+  it('returns 0 when no iframes', () => {
+    expect(countCrossOriginIframes()).toBe(0);
+  });
+
+  it('counts only cross-origin', () => {
+    document.body.append(
+      makeIframe('https://example.com/embed', false),
+      makeIframe('https://youtube.com/embed/1', true),
+      makeIframe('https://vimeo.com/video/2', true),
+    );
+    expect(countCrossOriginIframes()).toBe(2);
+  });
+
+  it('does not modify DOM (read-only)', () => {
+    document.body.append(makeIframe('https://youtube.com/embed/1', true));
+    const before = document.body.innerHTML;
+    countCrossOriginIframes();
+    expect(document.body.innerHTML).toBe(before);
+  });
+});
+
+describe('PlaceholderRecord shape', () => {
+  it('exposes iframe, parent, nextSibling, placeholder, originalDisplay', () => {
+    clearBody();
+    const iframe = makeIframe('https://youtube.com/embed/1', true);
+    const tail = document.createElement('div');
+    document.body.append(iframe, tail);
+    const records: PlaceholderRecord[] = installIframePlaceholders();
+    expect(records).toHaveLength(1);
+    const rec = records[0];
+    expect(rec.iframe).toBe(iframe);
+    expect(rec.parent).toBe(document.body);
+    expect(rec.nextSibling).toBe(tail);
+    expect(rec.placeholder).toBeInstanceOf(HTMLElement);
+    expect(typeof rec.originalDisplay).toBe('string');
+  });
+});
+
+void vi;
