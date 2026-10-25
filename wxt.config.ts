@@ -31,7 +31,10 @@ export default defineConfig({
     // — do NOT redeclare here or the manifest will contain duplicates.
     web_accessible_resources: [
       {
-        resources: ['offscreen.html', 'editor.html'],
+        // Only `offscreen.html` exists. Listing a non-existent resource
+        // (e.g. a planned `editor.html`) makes Chrome log a manifest
+        // warning on every load.
+        resources: ['offscreen.html'],
         matches: ['<all_urls>'],
       },
     ],

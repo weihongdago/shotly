@@ -9,6 +9,8 @@
  * Heartbeat is set to 20s (less than Chrome's 30s SW idle threshold).
  */
 
+import type { ExportFormat } from './export';
+
 export const PROTOCOL_VERSION = 1 as const;
 
 export type Scope =
@@ -76,6 +78,109 @@ export const CAPTURE_MSG = {
 
 export type CaptureMsg = (typeof CAPTURE_MSG)[keyof typeof CAPTURE_MSG];
 
+/**
+ * Export pipeline (architecture v1.2 §3.1 — "offscreen document owns
+ * OffscreenCanvas stitching, PDF encoding").
+ *
+ * Flow:
+ *   popup --[export:convert]--> bg --relay--> offscreen
+ *   offscreen --(canvas/pdf-lib)--> blobUrl --result--> bg --relay--> popup
+ *   popup --(anchor download / navigator.clipboard)--> user's disk / clipboard
+ *
+ * The popup never touches image bytes directly: it only ever holds the
+ * `blobUrl` minted by the offscreen document. That keeps the heavy
+ * pdf-lib bundle out of the popup's critical path (popup must open fast)
+ * and out of the SW (which has no DOM).
+ */
+export const EXPORT_MSG = {
+  /** popup → bg → offscreen: convert a captured blob into a target format. */
+  CONVERT: 'export:convert',
+} as const;
+
+export type ExportMsg = (typeof EXPORT_MSG)[keyof typeof EXPORT_MSG];
+
+/**
+ * Region capture protocol (architecture v1.2 §3.2 — decision B1:
+ * "矩形框选（拖拽）+ 智能元素吸附（v1.1 增强）").
+ *
+ * Flow:
+ *   popup --[region:start]--> bg --relay--> content
+ *   content opens the drag-select overlay, then answers with either
+ *   --[region:selected]--> (page-absolute rect) or --[region:cancelled]-->.
+ *   bg relays the answer back to the popup.
+ *
+ * The actual pixel capture reuses the regular screenshot pipeline
+ * (`CAPTURE_MSG.*`) — only the *geometry* differs (see StitchChunkPayload.crop).
+ */
+export const REGION_MSG = {
+  /** popup → bg → content: 启动区域选择 */
+  START: 'region:start',
+  /** content → bg: 选区确定（页面绝对坐标） */
+  SELECTED: 'region:selected',
+  /** content → bg: 用户取消 */
+  CANCELLED: 'region:cancelled',
+} as const;
+
+export type RegionMsg = (typeof REGION_MSG)[keyof typeof REGION_MSG];
+
+/**
+ * A rectangle in **page-absolute CSS pixels** (same coordinate space as
+ * `MouseEvent.pageX/pageY`), NOT viewport coordinates.
+ *
+ * Single source of truth: defined here (protocol layer) and re-exported by
+ * `utils/region-selector.ts` — never declared twice.
+ */
+export interface RegionSelection {
+  /** 页面绝对坐标 */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** popup → bg: start a region selection on the given tab. */
+export interface RegionStartRequest {
+  tabId: number;
+}
+
+/** content → bg: the user finished dragging a rectangle. */
+export interface RegionSelectedPayload {
+  region: RegionSelection;
+}
+
+/** bg → popup: the region flow reached a terminal state. */
+export interface RegionAckResponse {
+  ok: boolean;
+  tabId: number;
+  reason?: string;
+}
+
+/**
+ * Supported export formats (PRD v1 §3.2 F4/F5 — PNG/JPG/PDF).
+ *
+ * `ExportFormat` itself is defined in `utils/export.ts` (the module that owns
+ * the MIME / extension tables) and only *imported* here — re-exporting it
+ * would make WXT's auto-import registry see the same name in two modules and
+ * emit a "Duplicated imports" warning at build time.
+ */
+
+export interface ExportConvertRequest {
+  /** blobUrl previously minted by the offscreen document. */
+  sourceBlobUrl: string;
+  format: ExportFormat;
+  /** JPEG quality 0..1. Ignored for png/pdf. Defaults to 0.92. */
+  quality?: number;
+}
+
+export interface ExportConvertResponse {
+  blobUrl: string;
+  format: ExportFormat;
+  mimeType: string;
+  byteSize: number;
+  width: number;
+  height: number;
+}
+
 export interface CaptureChunkPayload {
   index: number;
   dataUrl: string;
@@ -95,12 +200,34 @@ export interface CaptureChunkResponse {
   capturedAt: number;
 }
 
+/**
+ * Source rectangle inside a captured bitmap, in **bitmap (device) pixels**.
+ *
+ * Used by the region pipeline: the offscreen stitcher crops each captured
+ * viewport down to the part that overlaps the selected region, so the full
+ * viewport bitmaps never have to be re-encoded on the content side.
+ */
+export interface CropRect {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
 export interface StitchChunkPayload {
   index: number;
   dataUrl: string;
   segmentHeight: number;
   viewportWidth: number;
   offsetY: number;
+  /**
+   * Optional crop window (bitmap pixels). When present the offscreen
+   * stitcher draws only that sub-rect of the bitmap — this is how the
+   * region pipeline stitches several *viewport* captures into one image.
+   * When absent the legacy full-page behaviour (draw from the top-left,
+   * `segmentHeight` pixels tall) is preserved byte-for-byte.
+   */
+  crop?: CropRect;
 }
 
 export interface InitStitchPayload {
@@ -190,9 +317,19 @@ export function requestOverPort<TReq, TRes>(
   });
 }
 
-/** Simple random id (no PII, no analytics). */
+/**
+ * Simple random id (no PII, no analytics).
+ *
+ * `crypto.randomUUID()` is only available in **secure contexts**. Content
+ * scripts run inside the page's world, so on a plain `http://` site the
+ * method is `undefined` and calling it would throw. Fall back to
+ * `getRandomValues` (available everywhere) instead of exploding.
+ */
 export function cryptoRandomId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Sleep helper — used for retry/backoff in capture pipeline. */

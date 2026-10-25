@@ -38,6 +38,19 @@ export interface ScreenshotChunk {
   dataUrl: string;
   segmentHeight: number;
   capturedAt: number;
+  /**
+   * Page-absolute Y (CSS px) where this chunk's content is PLACED on the
+   * stitched canvas.
+   */
+  offsetY: number;
+  /**
+   * Page-absolute Y (CSS px) of the top of the captured viewport.
+   *
+   * The browser clamps the last scroll position, so the viewport we
+   * actually captured does not necessarily start where we asked it to.
+   * `offsetY - viewportTop` is therefore the crop offset into the bitmap.
+   */
+  viewportTop: number;
 }
 
 export interface ScreenshotPlan {
@@ -46,6 +59,61 @@ export interface ScreenshotPlan {
   viewportWidth: number;
   devicePixelRatio: number;
   segments: SegmentMeta[];
+}
+
+/**
+ * One viewport-height slice of a full-page capture.
+ *
+ * `chrome.tabs.captureVisibleTab` only ever returns the VISIBLE viewport,
+ * so a full-page capture has to scroll one viewport at a time. The slices
+ * are contiguous and non-overlapping in page coordinates: slice `k` covers
+ * `[k*vh, min((k+1)*vh, totalHeight))`.
+ */
+export interface ViewportSlice {
+  /** Ordinal of the slice (0-based). */
+  index: number;
+  /** Target scroll position (page px). */
+  scrollY: number;
+  /**
+   * Page-absolute Y where this slice is supposed to END.
+   *
+   * It is the NEXT slice's scroll target (or the page bottom for the last
+   * slice) — that is what makes the slices tile the page exactly.
+   */
+  plannedEnd: number;
+}
+
+/**
+ * Split a full page into viewport-height scroll targets.
+ *
+ * `chrome.tabs.captureVisibleTab` only ever returns the VISIBLE viewport,
+ * so a full-page capture has to scroll one viewport at a time.
+ *
+ * The last target is clamped to `totalHeight - viewportHeight` because the
+ * browser cannot scroll further. That means the last viewport overlaps the
+ * previous one, and the caller has to crop the overlap away — `plannedEnd`
+ * makes the intended end of each slice explicit so the tiling can be
+ * computed from the ACTUAL scroll positions.
+ */
+export function planViewportSlices(
+  totalHeight: number,
+  viewportHeight: number,
+): ViewportSlice[] {
+  if (!(totalHeight > 0) || !(viewportHeight > 0)) return [];
+
+  const count = Math.max(1, Math.ceil(totalHeight / viewportHeight));
+  const maxScroll = Math.max(0, totalHeight - viewportHeight);
+
+  const targets: number[] = [];
+  for (let k = 0; k < count; k++) {
+    targets.push(Math.min(k * viewportHeight, maxScroll));
+  }
+
+  return targets.map((scrollY, index) => ({
+    index,
+    scrollY,
+    plannedEnd: index + 1 < count ? targets[index + 1] : totalHeight,
+  }));
 }
 
 // ─── DOM measurement & planning ─────────────────────────────────────────────
@@ -202,13 +270,20 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
   const iframes = installIframePlaceholders();
   const hidden = hideFixedElements();
   const primedLazy = primeLazyImages();
-  console.info(`[shotly] capture start: ${ctx.plan.segments.length} segments, ${primedLazy} lazy images primed`);
+  // `captureVisibleTab` only ever returns the VISIBLE viewport, so the
+  // capture has to walk the page one viewport at a time — the 4096px
+  // `plan.segments` are a different concern (how much page there is).
+  const slices = planViewportSlices(
+    ctx.plan.totalHeight,
+    ctx.plan.viewportHeight,
+  );
+  console.info(`[shotly] capture start: ${slices.length} viewport slices, ${primedLazy} lazy images primed`);
 
   const previousScrollY = window.scrollY;
   try {
-    for (const seg of ctx.plan.segments) {
-      ctx.onProgress?.(seg.index, ctx.plan.segments.length);
-      window.scrollTo({ top: seg.startY, behavior: 'instant' });
+    for (const slice of slices) {
+      ctx.onProgress?.(slice.index, slices.length);
+      window.scrollTo({ top: slice.scrollY, behavior: 'instant' });
       await sleep(200); // let scroll settle
       await waitForNetworkIdle();
       await sleep(PER_SEGMENT_BUFFER_MS);
@@ -218,11 +293,23 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
       // to ctx.onChunk() carries the synthetic placeholder dataUrl only so
       // the engine stays pure / testable; the real dataUrl flows via the
       // content<->bg port. See entrypoints/content.ts `handleStartCapture`.
-      const syntheticDataUrl = await syntheticChunkPlaceholder(seg);
+      const syntheticDataUrl = await syntheticChunkPlaceholder(slice);
+      // The browser clamps the scroll position (the last slice of a page
+      // that cannot scroll far enough), so read the ACTUAL position back
+      // instead of assuming `slice.scrollY` was honoured.
+      const viewportTop = window.scrollY;
       const chunk: ScreenshotChunk = {
-        index: seg.index,
+        index: slice.index,
         dataUrl: syntheticDataUrl,
-        segmentHeight: seg.height,
+        // `plannedEnd` is where this slice's content is SUPPOSED to end on
+        // the page, `scrollY` is where it starts — the difference is the
+        // slice's height in page px. (The last slice is usually shorter
+        // than a viewport, and it may overlap the previous one when the
+        // page height is not a multiple of the viewport height — the
+        // caller crops the overlap away using `viewportTop`.)
+        segmentHeight: slice.plannedEnd - slice.scrollY,
+        offsetY: slice.scrollY,
+        viewportTop,
         capturedAt: Date.now(),
       };
       chunks.push(chunk);
@@ -248,7 +335,7 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
  * Stitch chunks into a single image via OffscreenCanvas.
  *
  * D+2 status: the production path runs in the offscreen document
- * (see entrypoints/offscreen-main.ts) because MV3 Service Workers cannot
+ * (see entrypoints/offscreen/main.ts) because MV3 Service Workers cannot
  * use DOM. This function is retained as a same-process fallback for
  *   (a) unit tests that run under happy-dom (no chrome.offscreen), and
  *   (b) future single-process variants (e.g. Firefox MV2 if we ship there).
@@ -283,7 +370,7 @@ export async function stitchChunks(
     const bitmap = await createImageBitmap(
       await (await fetch(chunk.dataUrl)).blob(),
     );
-    const offsetY = chunk.index * plan.viewportHeight;
+    const offsetY = chunk.offsetY;
     const drawHeight = Math.min(
       chunk.segmentHeight,
       plan.totalHeight - offsetY,
@@ -301,7 +388,7 @@ export async function stitchChunks(
 
 // ─── D+1 placeholder so the pipeline can be unit-tested without Chrome ──────
 
-async function syntheticChunkPlaceholder(seg: SegmentMeta): Promise<string> {
+async function syntheticChunkPlaceholder(seg: ViewportSlice): Promise<string> {
   // 1x1 transparent PNG — real capture happens via bg port in D+2
   const dataUrl =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';

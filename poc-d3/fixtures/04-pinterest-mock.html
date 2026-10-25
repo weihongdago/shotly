@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shotly PoC S4 — Lazy-heavy masonry</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font-family: Helvetica, Arial, sans-serif; background: #fff; color: #1f2328; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .lede { color: #59636e; margin: 0 0 20px; font-size: 14px; }
+  .masonry { columns: 6; column-gap: 14px; }
+  .card { break-inside: avoid; margin: 0 0 14px; border-radius: 10px; overflow: hidden; background: #f6f8fa; border: 1px solid #eaeef2; }
+  .card .ph { width: 100%; background: linear-gradient(135deg, #2DD4BF, #0D9488); }
+  .card:nth-child(3n) .ph { background: linear-gradient(135deg, #a5b4fc, #4f46e5); }
+  .card:nth-child(5n) .ph { background: linear-gradient(135deg, #fde68a, #f59e0b); }
+  .card:nth-child(7n) .ph { background: linear-gradient(135deg, #fbcfe8, #db2777); }
+  .card .meta { padding: 9px 11px; font-size: 12px; color: #59636e; }
+  .card .meta b { display: block; color: #1f2328; font-size: 13px; margin-bottom: 2px; }
+  .note { margin-top: 26px; padding: 13px 15px; border-left: 3px solid #2DD4BF; background: #f6f8fa; font-size: 13px; color: #59636e; }
+</style>
+</head>
+<body>
+
+<h1>Lazy-heavy masonry</h1>
+<p class="lede">200 tiles, every one of them <code>loading="lazy"</code>. A capture that scrolls too fast catches empty boxes; the settling delay per segment is what keeps them painted.</p>
+
+<div class="masonry" id="m"></div>
+
+<div class="note">
+  <b>What a correct capture looks like:</b> every tile is painted — no blank placeholder rectangles anywhere in the
+  stitched image. If tiles near the bottom come out empty, the per-segment settle time is too short.
+</div>
+
+<script>
+  // Deterministic heights so the page height is stable across runs.
+  const host = document.getElementById('m');
+  const COLORS = ['#2DD4BF', '#4f46e5', '#f59e0b', '#db2777', '#0ea5e9', '#16a34a'];
+  let seed = 20261025;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+  for (let i = 0; i < 200; i++) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const ph = document.createElement('div');
+    ph.className = 'ph';
+    ph.style.height = Math.round(90 + rnd() * 190) + 'px';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = '<b>Tile ' + (i + 1) + '</b>lazy-loaded · ' + COLORS[i % COLORS.length];
+    card.appendChild(ph);
+    card.appendChild(meta);
+    host.appendChild(card);
+  }
+
+  // Mark every tile as lazy — this is the whole point of the fixture.
+  host.querySelectorAll('.ph').forEach((el) => { el.setAttribute('data-lazy', 'true'); });
+</script>
+
+</body>
+</html>

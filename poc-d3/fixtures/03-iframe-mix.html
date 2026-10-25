@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shotly PoC S3 — Cross-origin iframe mix</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; font-family: Helvetica, Arial, sans-serif; color: #1f2328; background: #fff; line-height: 1.6; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .lede { color: #59636e; margin: 0 0 26px; font-size: 15px; }
+  h2 { font-size: 18px; margin: 30px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #d1d9e0; }
+  .frame-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .frame-wrap { border: 1px solid #d1d9e0; border-radius: 8px; overflow: hidden; background: #f6f8fa; }
+  .frame-label { font-size: 12px; font-weight: 600; padding: 7px 11px; background: #eaeef2; border-bottom: 1px solid #d1d9e0; display: flex; justify-content: space-between; }
+  .badge { font-weight: 500; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: #d1d9e0; color: #59636e; }
+  .badge.cross { background: #ffd8b1; color: #7a4a00; }
+  iframe { width: 100%; height: 190px; border: 0; display: block; background: #fff; }
+  .note { margin-top: 24px; padding: 14px 16px; border-left: 3px solid #2DD4BF; background: #f6f8fa; font-size: 13.5px; color: #59636e; }
+</style>
+</head>
+<body>
+
+<h1>Cross-origin iframe mix</h1>
+<p class="lede">Five cross-origin frames plus two same-origin frames. Cross-origin frames cannot be read from this page, so a capture tool must replace them with placeholders that preserve the original box.</p>
+
+<h2>Frame matrix</h2>
+<div class="frame-grid">
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>01 · example.com</span><span class="badge cross">cross-origin</span></div>
+    <iframe src="https://example.com/" loading="eager" title="cross origin example"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>02 · iana.org</span><span class="badge cross">cross-origin</span></div>
+    <iframe src="https://www.iana.org/domains/reserved" loading="eager" title="cross origin iana"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>03 · wikipedia.org</span><span class="badge cross">cross-origin</span></div>
+    <iframe src="https://www.wikipedia.org/" loading="eager" title="cross origin wikipedia"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>04 · mozilla.org</span><span class="badge cross">cross-origin</span></div>
+    <iframe src="https://www.mozilla.org/" loading="eager" title="cross origin mozilla"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>05 · example.net</span><span class="badge cross">cross-origin</span></div>
+    <iframe src="https://example.net/" loading="eager" title="cross origin example net"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>06 · same-origin (local)</span><span class="badge">same-origin</span></div>
+    <iframe src="06-same-origin.html" loading="eager" title="same origin child"></iframe>
+  </div>
+
+  <div class="frame-wrap">
+    <div class="frame-label"><span>07 · same-origin (local)</span><span class="badge">same-origin</span></div>
+    <iframe src="06-same-origin.html" loading="eager" title="same origin child 2"></iframe>
+  </div>
+
+</div>
+
+<div class="note">
+  <b>What a correct capture looks like:</b> the five cross-origin frames appear as placeholder blocks with the mint
+  accent bar and the source hostname, each keeping the exact box of the original frame. The two same-origin frames are
+  captured with their real content. Nothing in the document flow shifts, so the page height stays stable.
+</div>
+
+</body>
+</html>

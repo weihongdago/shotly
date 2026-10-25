@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Same-origin child frame</title>
+<style>
+  body { margin: 0; padding: 18px; font-family: Helvetica, Arial, sans-serif; background: #ffffff; color: #1f2328; }
+  h3 { margin: 0 0 10px; font-size: 15px; color: #2DD4BF; }
+  p { margin: 0 0 10px; font-size: 13px; color: #59636e; line-height: 1.55; }
+  ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  li { margin: 4px 0; }
+  .ok { display: inline-block; padding: 2px 8px; border-radius: 10px; background: #dafbe1; color: #116329; font-size: 11px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h3>Same-origin frame <span class="ok">captured as-is</span></h3>
+  <p>This frame is served from the same origin as its parent, so the host page is allowed to read it. A correct capture
+     preserves this content verbatim instead of replacing it with a placeholder.</p>
+  <ul>
+    <li>Readability: text renders at native resolution</li>
+    <li>Background: stays white, not transparent</li>
+    <li>Vertical rhythm: matches the original frame box</li>
+  </ul>
+</body>
+</html>

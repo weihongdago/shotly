@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shotly PoC S1 — Short article (Wikipedia-like)</title>
+<style>
+  :root { --ink:#202122; --muted:#54595d; --line:#c8ccd1; --accent:#2DD4BF; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; max-width: 720px; padding: 24px 20px 80px;
+    font-family: Georgia, 'Times New Roman', serif; color: var(--ink); line-height: 1.6;
+  }
+  h1 { font-family: Helvetica, Arial, sans-serif; font-size: 30px; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px; }
+  .subtitle { font-family: Helvetica, Arial, sans-serif; font-size: 13px; color: var(--muted); margin: 0 0 22px; }
+  h2 { font-family: Helvetica, Arial, sans-serif; font-size: 20px; border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-top: 30px; }
+  p { margin: 12px 0; }
+  .infobox {
+    float: right; width: 250px; margin: 0 0 18px 18px; padding: 12px;
+    border: 1px solid var(--line); background: #f8f9fa; font-family: Helvetica, Arial, sans-serif; font-size: 12.5px;
+  }
+  .infobox h3 { margin: 0 0 8px; font-size: 14px; text-align: center; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .infobox table { width: 100%; border-collapse: collapse; }
+  .infobox td { padding: 3px 0; vertical-align: top; }
+  .infobox td:first-child { color: var(--muted); width: 40%; }
+  .swatch { display: inline-block; width: 100%; height: 76px; background: linear-gradient(135deg,#2DD4BF,#0D9488); border-radius: 4px; }
+  .toc { border: 1px solid var(--line); background: #f8f9fa; padding: 12px 16px; margin: 18px 0; font-family: Helvetica, Arial, sans-serif; font-size: 13.5px; }
+  .toc ul { margin: 6px 0 0; padding-left: 20px; }
+  .toc li { margin: 3px 0; }
+  .toc a { color: #3366cc; text-decoration: none; }
+  table.wikitable { border-collapse: collapse; width: 100%; font-family: Helvetica, Arial, sans-serif; font-size: 13.5px; margin: 14px 0; }
+  table.wikitable th, table.wikitable td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; }
+  table.wikitable th { background: #eaecf0; }
+  .catlinks { margin-top: 36px; padding: 10px 14px; border: 1px solid var(--line); background: #f8f9fa; font-family: Helvetica, Arial, sans-serif; font-size: 13px; }
+  .catlinks ul { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 8px 0 0; list-style: none; }
+  .catlinks li { background: #eaecf0; padding: 3px 8px; border-radius: 2px; }
+  .catlinks a { color: #3366cc; text-decoration: none; }
+  .footer-note { margin-top: 30px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Whole-page screenshot</h1>
+<p class="subtitle">From Wikipedia, the free encyclopedia</p>
+
+<div class="infobox">
+  <h3>Whole-page screenshot</h3>
+  <div class="swatch"></div>
+  <table>
+    <tr><td>Developer</td><td>Shotly Team</td></tr>
+    <tr><td>Initial release</td><td>12 July 2026</td></tr>
+    <tr><td>Written in</td><td>TypeScript, Vue 3</td></tr>
+    <tr><td>Operating system</td><td>Chrome MV3</td></tr>
+    <tr><td>License</td><td>Open source</td></tr>
+  </table>
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#history">History</a></li>
+    <li><a href="#technique">Technique</a></li>
+    <li><a href="#challenges">Challenges</a></li>
+    <li><a href="#comparison">Comparison</a></li>
+  </ul>
+</div>
+
+<h2 id="history">History</h2>
+<p>A <b>whole-page screenshot</b> is a capture of the entire scrollable contents of a web page, rather than only the portion visible within the browser viewport. The technique became widely used in the late 2000s as a way to share long-form content — documentation, articles, receipts, and dashboards — that did not fit inside a single screen.</p>
+<p>Earlier approaches to long capture relied on plugins that injected additional scripts into the page. Modern browser extensions instead compose several native primitives: programmatic scrolling, viewport capture, and an off-screen canvas used as an accumulation buffer.</p>
+
+<h2 id="technique">Technique</h2>
+<p>The general procedure is a scroll-and-stitch loop. The page is measured to determine its total scroll height, then divided into segments no taller than the viewport. For each segment the page is scrolled into position, given a short settling interval so that lazy content can render, and the visible viewport is captured. Each captured bitmap is then drawn onto an accumulation canvas at the vertical offset that corresponds to its segment.</p>
+<p>Two classes of element break this naive approach. <b>Fixed and sticky elements</b> — floating headers, cookie banners, chat widgets — would otherwise be repeated in every segment. <b>Cross-origin iframes</b> cannot be read from the host page at all, because the browser forbids reading the document of a frame served from a different origin. Screenshot tools therefore replace such frames with a placeholder that preserves the frame's box, which keeps the surrounding document flow intact.</p>
+
+<h2 id="challenges">Challenges</h2>
+<p>Long pages impose a hard memory ceiling. A full-page bitmap at 1920 pixels wide and 50,000 pixels tall occupies roughly 384 megabytes as a raw RGBA buffer. Browsers will terminate a context that exceeds its memory budget, so a practical limit has to be enforced, and the user must be offered a smaller region capture instead.</p>
+<p>Animated content, <code>position: fixed</code> headers, lazy-loaded images, and web fonts that swap during load can each produce a torn or inconsistent result. A settling delay between scroll and capture mitigates most of these, at the cost of total capture time.</p>
+
+<h2 id="comparison">Comparison</h2>
+<table class="wikitable">
+  <tr><th>Approach</th><th>Resolution</th><th>Speed</th><th>Notes</th></tr>
+  <tr><td>Scroll and stitch</td><td>Viewport-native</td><td>Slow on very long pages</td><td>No server round-trip</td></tr>
+  <tr><td>Server-side render</td><td>Arbitrary</td><td>Slow, network-bound</td><td>Requires uploading content</td></tr>
+  <tr><td>Single tall viewport</td><td>Viewport-native</td><td>Fast</td><td>Content is stretched</td></tr>
+</table>
+
+<div class="catlinks">
+  <strong>Categories</strong>
+  <ul>
+    <li><a href="#">Screenshot software</a></li>
+    <li><a href="#">Web browsers</a></li>
+    <li><a href="#">Image capture</a></li>
+    <li><a href="#">Browser extensions</a></li>
+  </ul>
+</div>
+
+<p class="footer-note">This page is a local fixture used for automated capture testing. It imitates the structure of a Wikipedia article — infobox, table of contents, wikitable, category links — so that a whole-page capture produces a representative result.</p>
+
+</body>
+</html>

@@ -3,20 +3,46 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { theme, detectTheme, watchTheme, type ThemeMode } from '../../utils/theme';
 import {
   CAPTURE_MSG,
+  EXPORT_MSG,
   PORT_NAMES,
   PROTOCOL_VERSION,
+  REGION_MSG,
   type Envelope,
+  type ExportConvertRequest,
+  type ExportConvertResponse,
   type FinalizeResponse,
+  type RegionAckResponse,
   type StartFullResponse,
 } from '../../utils/messaging';
+import { buildExportFilename, EXPORT_MIME, type ExportFormat } from '../../utils/export';
+import {
+  addHistory,
+  deleteHistory,
+  listHistory,
+  type HistoryEntrySummary,
+} from '../../utils/history-store';
 
 const mode = ref<ThemeMode>('light');
-const status = ref<'idle' | 'starting' | 'capturing' | 'finalizing' | 'done' | 'error'>('idle');
+const status = ref<'idle' | 'starting' | 'selecting' | 'capturing' | 'finalizing' | 'done' | 'error'>('idle');
 const progress = ref<{ i: number; total: number } | null>(null);
 const errorMsg = ref<string | null>(null);
 const result = ref<FinalizeResponse | null>(null);
 let unwatch: (() => void) | null = null;
 let port: chrome.runtime.Port | null = null;
+
+// ─── Export / history state (D+3) ──────────────────────────────────────────
+const format = ref<ExportFormat>('png');
+const exporting = ref(false);
+const copied = ref(false);
+const saving = ref(false);
+const showHistory = ref(false);
+const historyItems = ref<HistoryEntrySummary[]>([]);
+/** Blob URL minted by the offscreen converter — kept so we can download it. */
+let exportBlobUrl: string | null = null;
+/** Title of the page we captured, used for the export filename. */
+let capturedTitle = 'screenshot';
+/** Source URL of the captured page (stored locally, never uploaded). */
+let capturedUrl = '';
 
 // Heartbeat to keep the SW alive while the popup is open (architecture §2.3.3).
 // 20s matches bg/content — same window, lower wake cost.
@@ -70,6 +96,10 @@ onUnmounted(() => {
     // Free the blob URL when the popup closes.
     URL.revokeObjectURL(result.value.blobUrl);
   }
+  if (exportBlobUrl) {
+    URL.revokeObjectURL(exportBlobUrl);
+    exportBlobUrl = null;
+  }
 });
 
 const t = () => theme[mode.value];
@@ -102,6 +132,16 @@ function openPopupPort() {
         case 'screenshot:too-long':
           errorMsg.value = `Page too long: ${(env.payload as { totalHeight: number }).totalHeight}px > 50_000px limit`;
           status.value = 'error';
+          break;
+        // Region flow (architecture §3.2): the user finished dragging the
+        // rectangle → the capture starts.
+        case REGION_MSG.SELECTED:
+          status.value = 'capturing';
+          break;
+        // The user pressed Escape → silently back to idle, no error toast.
+        case REGION_MSG.CANCELLED:
+          status.value = 'idle';
+          progress.value = null;
           break;
       }
     });
@@ -163,72 +203,295 @@ async function captureFull() {
   errorMsg.value = null;
 
   // Find the active tab in the current window and ask bg to kick the pipeline.
-  // Test override: window.__shotlyTestTabId bypasses the active-tab lookup so
-  // Playwright can drive the popup as a regular tab (chrome-extension://.../popup.html).
-  const overrideId = (window as unknown as { __shotlyTestTabId?: number }).__shotlyTestTabId;
-  const resolveTabId = (cb: (id: number) => void) => {
-    if (overrideId && overrideId > 0) {
-      cb(overrideId);
-      return;
-    }
-    chrome.tabs.query({ active: true, currentWindow: true }, async ([tab]) => {
-      if (!tab?.id) {
-        errorMsg.value = 'no active tab';
+  const tabId = await resolveActiveTabId();
+  if (tabId == null) {
+    errorMsg.value = 'no active tab';
+    status.value = 'error';
+    return;
+  }
+
+  const reqId = crypto.randomUUID();
+  const ackListener = (env: Envelope) => {
+    if (env.id !== reqId) return;
+    if (env.type === `${CAPTURE_MSG.START_FULL}:ack`) {
+      const payload = env.payload as StartFullResponse;
+      if (!payload.ok) {
+        errorMsg.value = payload.reason ?? 'failed to start';
         status.value = 'error';
+      } else {
+        status.value = 'capturing';
+      }
+      port?.onMessage.removeListener(ackListener);
+    }
+  };
+  port?.onMessage.addListener(ackListener);
+
+  console.info(`[shotly:popup] posting START_FULL tabId=${tabId}`);
+  port?.postMessage({
+    v: PROTOCOL_VERSION,
+    id: reqId,
+    scope: 'popup',
+    type: CAPTURE_MSG.START_FULL,
+    payload: { tabId },
+  } satisfies Envelope);
+}
+
+/**
+ * Resolve the tab to capture.
+ *
+ * Test override: window.__shotlyTestTabId bypasses the active-tab lookup so
+ * Playwright can drive the popup as a regular tab (chrome-extension://.../popup.html).
+ */
+function resolveActiveTabId(): Promise<number | null> {
+  const overrideId = (window as unknown as { __shotlyTestTabId?: number }).__shotlyTestTabId;
+  if (overrideId && overrideId > 0) {
+    return Promise.resolve(overrideId);
+  }
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      if (!tab?.id) {
+        resolve(null);
         return;
       }
-      cb(tab.id);
+      // Remember page identity for the export filename + history metadata.
+      // Stays local (IndexedDB) — never uploaded (privacy red line).
+      capturedTitle = tab.title?.trim() || 'screenshot';
+      capturedUrl = tab.url ?? '';
+      resolve(tab.id);
     });
-  };
-
-  resolveTabId((tabId: number) => {
-    const reqId = crypto.randomUUID();
-    const ackListener = (env: Envelope) => {
-      if (env.id !== reqId) return;
-      if (env.type === `${CAPTURE_MSG.START_FULL}:ack`) {
-        const payload = env.payload as StartFullResponse;
-        if (!payload.ok) {
-          errorMsg.value = payload.reason ?? 'failed to start';
-          status.value = 'error';
-        } else {
-          status.value = 'capturing';
-        }
-        port?.onMessage.removeListener(ackListener);
-      }
-    };
-    port?.onMessage.addListener(ackListener);
-
-    console.info(`[shotly:popup] posting START_FULL tabId=${tabId}`);
-    port?.postMessage({
-      v: PROTOCOL_VERSION,
-      id: reqId,
-      scope: 'popup',
-      type: CAPTURE_MSG.START_FULL,
-      payload: { tabId },
-    } satisfies Envelope);
   });
 }
 
-function captureRegion() {
-  // Region capture ships in v1.1 — D+2 keeps the button as a no-op
-  // placeholder so the popup layout stays stable.
-  console.info('[shotly:popup] region capture requested (v1.1)');
+/**
+ * Region capture (architecture §3.2, decision B1).
+ *
+ * The user drags a rectangle on the page — that click closes the popup, so
+ * the background saves the capture to the download folder when the popup is
+ * gone. When the popup happens to stay open (e.g. the automated tests drive
+ * it as a regular tab) the result shows up here like a normal capture.
+ */
+async function captureRegion() {
+  console.info('[shotly:popup] captureRegion called');
+  if (!port) {
+    errorMsg.value = 'not connected to background';
+    return;
+  }
+  if (
+    status.value === 'starting' ||
+    status.value === 'selecting' ||
+    status.value === 'capturing' ||
+    status.value === 'finalizing'
+  ) {
+    console.info('[shotly:popup] captureRegion already in progress, skipping duplicate');
+    return;
+  }
+  status.value = 'selecting';
+  progress.value = null;
+  result.value = null;
+  errorMsg.value = null;
+
+  const tabId = await resolveActiveTabId();
+  if (tabId == null) {
+    errorMsg.value = 'no active tab';
+    status.value = 'error';
+    return;
+  }
+
+  const reqId = crypto.randomUUID();
+  const ackListener = (env: Envelope) => {
+    if (env.id !== reqId) return;
+    if (env.type === `${REGION_MSG.START}:ack`) {
+      const payload = env.payload as RegionAckResponse;
+      if (!payload.ok) {
+        errorMsg.value = payload.reason ?? 'failed to start region capture';
+        status.value = 'error';
+      }
+      port?.onMessage.removeListener(ackListener);
+    }
+  };
+  port?.onMessage.addListener(ackListener);
+
+  console.info(`[shotly:popup] posting REGION_START tabId=${tabId}`);
+  port?.postMessage({
+    v: PROTOCOL_VERSION,
+    id: reqId,
+    scope: 'popup',
+    type: REGION_MSG.START,
+    payload: { tabId },
+  } satisfies Envelope);
+}
+
+// ─── Export (D+3) ────────────────────────────────────────────────────────────
+
+/**
+ * Ask the background to convert the captured PNG into the selected format.
+ *
+ * Conversion happens in the offscreen document (it owns the canvas and
+ * pdf-lib); the popup only ever holds a blob URL. We cache the converted
+ * URL so re-downloading with the same format doesn't redo the work.
+ */
+async function convertExport(target: ExportFormat): Promise<string | null> {
+  if (!result.value || !port) return null;
+  if (exportBlobUrl && format.value === target) return exportBlobUrl;
+
+  exporting.value = true;
+  errorMsg.value = null;
+  try {
+    const reqId = crypto.randomUUID();
+    const payload: ExportConvertRequest = {
+      sourceBlobUrl: result.value.blobUrl,
+      format: target,
+    };
+    const reply = await new Promise<ExportConvertResponse>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`export '${target}' timed out after 30s`)),
+        30_000,
+      );
+      const listener = (env: Envelope) => {
+        if (env.id !== reqId) return;
+        clearTimeout(timer);
+        port?.onMessage.removeListener(listener);
+        if (env.type === `${EXPORT_MSG.CONVERT}:error`) {
+          reject(new Error((env.payload as { message: string }).message));
+        } else if (env.type === `${EXPORT_MSG.CONVERT}:result`) {
+          resolve(env.payload as ExportConvertResponse);
+        } else {
+          reject(new Error(`unexpected export reply: ${env.type}`));
+        }
+      };
+      port?.onMessage.addListener(listener);
+      port?.postMessage({
+        v: PROTOCOL_VERSION,
+        id: reqId,
+        scope: 'popup',
+        type: EXPORT_MSG.CONVERT,
+        payload,
+      } satisfies Envelope);
+    });
+
+    if (exportBlobUrl) URL.revokeObjectURL(exportBlobUrl);
+    exportBlobUrl = reply.blobUrl;
+    format.value = target;
+    return exportBlobUrl;
+  } catch (err) {
+    errorMsg.value = `导出失败: ${(err as Error).message}`;
+    return null;
+  } finally {
+    exporting.value = false;
+  }
 }
 
 async function downloadResult() {
   if (!result.value) return;
+  const url = await convertExport(format.value);
+  if (!url) return;
   try {
-    const res = await fetch(result.value.blobUrl);
-    const blob = await res.blob();
     const a = document.createElement('a');
-    a.href = result.value.blobUrl;
-    a.download = `shotly-${Date.now()}.png`;
+    a.href = url;
+    a.download = buildExportFilename({
+      title: capturedTitle,
+      format: format.value,
+    });
     document.body.appendChild(a);
     a.click();
     a.remove();
-    void blob; // satisfy linter — we used the URL directly
   } catch (err) {
     errorMsg.value = `download failed: ${(err as Error).message}`;
+  }
+}
+
+/** Copy the capture to the system clipboard as an image. */
+async function copyToClipboard() {
+  if (!result.value) return;
+  const url = await convertExport(format.value);
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    // ClipboardItem only accepts PNG for image/png — if the user picked
+    // JPG/PDF we still paste the original PNG so pasting into Slack/WeChat
+    // works (those apps expect a raster image, not a PDF).
+    const pngBlob = blob.type === 'image/png' ? blob : result.value ? await pngFromCapture() : null;
+    if (!pngBlob) throw new Error('no PNG payload available for clipboard');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1800);
+  } catch (err) {
+    errorMsg.value = `copy failed: ${(err as Error).message}`;
+  }
+}
+
+/** Fetch the original (PNG) capture blob — the clipboard needs a raster PNG. */
+async function pngFromCapture(): Promise<Blob | null> {
+  if (!result.value) return null;
+  try {
+    const res = await fetch(result.value.blobUrl);
+    return await res.blob();
+  } catch {
+    return null;
+  }
+}
+
+// ─── History (D+3) ───────────────────────────────────────────────────────────
+
+async function saveToHistory() {
+  if (!result.value) return;
+  saving.value = true;
+  errorMsg.value = null;
+  try {
+    const blob = await pngFromCapture();
+    if (!blob) throw new Error('no capture blob to save');
+    await addHistory({
+      blob,
+      meta: {
+        url: capturedUrl,
+        title: capturedTitle,
+        capturedAt: Date.now(),
+        width: result.value.width,
+        height: result.value.height,
+        format: 'png',
+        size: blob.size,
+        source: 'full',
+      },
+    });
+    await loadHistory();
+    status.value = 'done';
+  } catch (err) {
+    errorMsg.value = `保存到历史失败: ${(err as Error).message}`;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function loadHistory() {
+  try {
+    historyItems.value = await listHistory();
+  } catch (err) {
+    console.warn('[shotly:popup] loadHistory failed:', err);
+    historyItems.value = [];
+  }
+}
+
+async function toggleHistory() {
+  showHistory.value = !showHistory.value;
+  if (showHistory.value) await loadHistory();
+}
+
+/** Switching format invalidates the cached conversion. */
+async function onFormatChange(f: ExportFormat) {
+  format.value = f;
+  if (exportBlobUrl) {
+    URL.revokeObjectURL(exportBlobUrl);
+    exportBlobUrl = null;
+  }
+}
+
+async function removeHistoryItem(id: string) {
+  try {
+    await deleteHistory(id);
+    await loadHistory();
+  } catch (err) {
+    errorMsg.value = `删除失败: ${(err as Error).message}`;
   }
 }
 </script>
@@ -273,7 +536,7 @@ async function downloadResult() {
           background: t().brand,
           color: t().brandFg,
         }"
-        :disabled="status === 'starting' || status === 'capturing' || status === 'finalizing'"
+        :disabled="status === 'starting' || status === 'selecting' || status === 'capturing' || status === 'finalizing'"
         @click="captureFull"
       >
         <span class="card-icon">📷</span>
@@ -286,7 +549,7 @@ async function downloadResult() {
           color: t().text,
           borderColor: t().border,
         }"
-        :disabled="status === 'starting' || status === 'capturing' || status === 'finalizing'"
+        :disabled="status === 'starting' || status === 'selecting' || status === 'capturing' || status === 'finalizing'"
         @click="captureRegion"
       >
         <span class="card-icon">▭</span>
@@ -299,6 +562,7 @@ async function downloadResult() {
           color: t().text,
           borderColor: t().border,
         }"
+        @click="toggleHistory"
       >
         <span class="card-icon">⏱</span>
         <span class="card-label">历史库</span>
@@ -327,6 +591,9 @@ async function downloadResult() {
       }"
     >
       <div v-if="status === 'starting'" class="status-line">准备截图…</div>
+      <div v-else-if="status === 'selecting'" class="status-line">
+        选择区域中… 在页面上拖拽框选，Esc 取消
+      </div>
       <div v-else-if="status === 'capturing' && progress" class="status-line">
         截取中 {{ progress.i + 1 }} / {{ progress.total }}
         <div class="bar">
@@ -343,17 +610,88 @@ async function downloadResult() {
       <div v-else-if="status === 'done' && result" class="status-line">
         ✅ 完成 · {{ Math.round(result.byteSize / 1024) }} KB ·
         {{ result.width }}×{{ result.height }}
-        <button
-          class="dl-btn"
-          :style="{ background: t().brand, color: t().brandFg }"
-          @click="downloadResult"
-        >
-          下载
-        </button>
+
+        <!-- Format picker (PNG / JPG / PDF) -->
+        <div class="formats">
+          <button
+            v-for="f in (['png', 'jpg', 'pdf'] as ExportFormat[])"
+            :key="f"
+            class="fmt-btn"
+            :class="{ active: format === f }"
+            :style="
+              format === f
+                ? { background: t().brand, color: t().brandFg, borderColor: t().brand }
+                : { background: t().surface, color: t().text, borderColor: t().border }
+            "
+            @click="onFormatChange(f)"
+          >
+            {{ f.toUpperCase() }}
+          </button>
+        </div>
+
+        <div class="row">
+          <button
+            class="dl-btn"
+            :style="{ background: t().brand, color: t().brandFg }"
+            :disabled="exporting"
+            @click="downloadResult"
+          >
+            {{ exporting ? '处理中…' : '下载' }}
+          </button>
+          <button
+            class="dl-btn secondary"
+            :style="{ background: t().surface, color: t().text, borderColor: t().border }"
+            @click="copyToClipboard"
+          >
+            {{ copied ? '已复制' : '复制' }}
+          </button>
+          <button
+            class="dl-btn secondary"
+            :style="{ background: t().surface, color: t().text, borderColor: t().border }"
+            :disabled="saving"
+            @click="saveToHistory"
+          >
+            {{ saving ? '保存中…' : '存历史' }}
+          </button>
+        </div>
       </div>
       <div v-else-if="status === 'error'" class="status-line error">
         ❌ {{ errorMsg }}
       </div>
+    </section>
+
+    <!-- History panel (D+3) -->
+    <section
+      v-if="showHistory"
+      class="history"
+      :style="{
+        background: t().surfaceAlt,
+        color: t().text,
+        borderColor: t().border,
+      }"
+    >
+      <div class="history-head">
+        <span>历史库 ({{ historyItems.length }})</span>
+        <button class="close-btn" @click="showHistory = false">✕</button>
+      </div>
+      <div v-if="historyItems.length === 0" class="history-empty">
+        还没有保存的截图
+      </div>
+      <ul v-else class="history-list">
+        <li v-for="item in historyItems" :key="item.id" class="history-item">
+          <div class="history-meta">
+            <div class="history-title" :title="item.meta.title">
+              {{ item.meta.title }}
+            </div>
+            <div class="history-sub">
+              {{ item.meta.width }}×{{ item.meta.height }} ·
+              {{ Math.round(item.meta.size / 1024) }} KB ·
+              {{ new Date(item.meta.capturedAt).toLocaleString() }}
+            </div>
+          </div>
+          <button class="del-btn" @click="removeHistoryItem(item.id)">删除</button>
+        </li>
+      </ul>
     </section>
 
     <footer
@@ -496,6 +834,96 @@ async function downloadResult() {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
+}
+.dl-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dl-btn.secondary {
+  border: 1px solid;
+}
+.row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.formats {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.fmt-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.history {
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.close-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: inherit;
+  opacity: 0.6;
+}
+.history-empty {
+  opacity: 0.6;
+  padding: 8px 0;
+}
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.history-meta {
+  min-width: 0;
+  flex: 1;
+}
+.history-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-sub {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.del-btn {
+  background: transparent;
+  border: 1px solid;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+  color: inherit;
 }
 
 .footer {

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Type-check · Test · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Frozen lockfile — CI must fail if package.json and pnpm-lock.yaml drift.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # wxt prepare generates .wxt/ types + auto-imports. Without it the
+      # type-check fails on defineBackground / defineContentScript globals.
+      - name: Prepare WXT
+        run: pnpm exec wxt prepare
+
+      - name: Type-check
+        run: pnpm compile
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build (chrome-mv3)
+        run: pnpm build
+
+      - name: Build (firefox-mv2)
+        run: pnpm build:firefox
+
+      - name: Upload chrome-mv3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shotly-chrome-mv3
+          path: .output/chrome-mv3
+          retention-days: 14
