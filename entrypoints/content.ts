@@ -52,6 +52,16 @@ export default defineContentScript({
   main() {
     console.info('[shotly:content] script injected');
 
+    // Ready marker — lets automation (E2E) wait for the content script to
+    // actually be injected before driving the popup. Without it, the test
+    // can click "capture" before `document_idle` fires and the port
+    // connect fails intermittently.
+    try {
+      document.documentElement.setAttribute('data-shotly-content', 'ready');
+    } catch {
+      /* document may be in a weird state (e.g. XML) — not fatal */
+    }
+
     chrome.runtime.onConnect.addListener((port) => {
       if (port.name !== PORT_NAMES.screenshot) return;
 

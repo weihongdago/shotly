@@ -20,6 +20,7 @@
  *   bg ──done(blobUrl)──► content & popup
  */
 
+import { readPngDimensions } from '@/utils/png';
 import {
   CAPTURE_MSG,
   EXPORT_MSG,
@@ -782,36 +783,6 @@ async function captureVisibleTab(
     height,
     capturedAt: Date.now(),
   };
-}
-
-/**
- * Read PNG IHDR for width/height without decoding the full image.
- * Works for data:image/png;base64,... and data:image/png,... (URL-encoded).
- */
-async function readPngDimensions(
-  dataUrl: string,
-): Promise<{ width: number; height: number }> {
-  const comma = dataUrl.indexOf(',');
-  if (comma < 0) throw new Error('invalid dataUrl');
-  const header = dataUrl.slice(comma + 1, comma + 1 + 32);
-  const bytes = header.startsWith('data:') || /^[!-/]/.test(header)
-    ? new TextEncoder().encode(decodeURIComponent(header))
-    : Uint8Array.from(atob(header), (c) => c.charCodeAt(0));
-
-  // PNG signature 8B + IHDR length 4B + 'IHDR' 4B = 16B before width/height
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (
-    bytes.length < 24 ||
-    bytes[0] !== 0x89 ||
-    bytes[1] !== 0x50 ||
-    bytes[2] !== 0x4e ||
-    bytes[3] !== 0x47
-  ) {
-    throw new Error('not a PNG');
-  }
-  const width = view.getUint32(16, false);
-  const height = view.getUint32(20, false);
-  return { width, height };
 }
 
 // ─── Pipeline orchestration ───────────────────────────────────────────────────
