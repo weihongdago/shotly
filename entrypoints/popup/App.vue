@@ -611,6 +611,18 @@ async function removeHistoryItem(id: string) {
         ✅ 完成 · {{ Math.round(result.byteSize / 1024) }} KB ·
         {{ result.width }}×{{ result.height }}
 
+        <!-- Preview of the actual capture. Users want to see what they got
+             before downloading it; the blob URL is already local. -->
+        <div
+          class="preview"
+          :style="{
+            background: t().surfaceAlt,
+            borderColor: t().border,
+          }"
+        >
+          <img :src="result.blobUrl" alt="截图预览" class="preview-img" />
+        </div>
+
         <!-- Format picker (PNG / JPG / PDF) -->
         <div class="formats">
           <button
@@ -813,6 +825,25 @@ async function removeHistoryItem(id: string) {
 }
 .status-line.error {
   color: #dc2626;
+}
+/* Preview of the captured image. A full-page capture is very tall, so
+   `contain` would shrink the whole thing down to an unreadable sliver.
+   `cover` + `object-position: top` keeps the page at full popup width and
+   shows the top of it, which is what people actually want to check. */
+.preview {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  height: 132px;
+  background: #ffffff;
+}
+.preview-img {
+  width: 100%;
+  height: 132px;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
 }
 .bar {
   width: 100%;
