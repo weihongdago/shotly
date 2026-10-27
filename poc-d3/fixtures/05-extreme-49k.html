@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shotly PoC S5a — Extreme 49,500px page</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #1f2328; background: #fff; }
+  .banner { padding: 20px 28px; background: #0f172a; color: #fff; }
+  .banner h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; }
+  .banner p { margin: 0; font-size: 14px; color: #94a3b8; }
+  .strip { position: sticky; top: 0; z-index: 60; height: 34px; background: #2DD4BF; color: #062d29; font-size: 13px; font-weight: 700; display: flex; align-items: center; padding: 0 20px; }
+  .row { display: flex; gap: 20px; padding: 20px 28px; border-bottom: 1px solid #eaeef2; align-items: center; }
+  .row .n { flex: 0 0 84px; font-size: 13px; color: #8b949e; font-variant-numeric: tabular-nums; }
+  .row .t { flex: 1 1 auto; font-size: 16px; line-height: 1.5; }
+  .row .b { flex: 0 0 120px; height: 64px; border-radius: 8px; }
+  /* The filler pads the page to its target height. It MUST NOT be blank:
+     a blank tail would look exactly like a stitching gap, so the
+     "no empty band" assertion could not tell the two apart. Stripes make
+     every pixel of the page carry ink. */
+  .filler { margin: 0; background: repeating-linear-gradient(180deg, #e8ebee 0 20px, #f7f9fa 20px 40px); }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <h1>Extreme page — 49,500px</h1>
+  <p>Just under the 50,000px hard limit. A correct capture completes; the stitched canvas is roughly 1280 × 49,500.</p>
+</div>
+<div class="strip">sticky strip — must appear once, not 62 times</div>
+
+<div id="rows"></div>
+<div class="filler" id="filler"></div>
+
+<script>
+  // Deterministic content so the page is byte-stable between runs.
+  (function () {
+    const TARGET = 49500;
+    const host = document.getElementById('rows');
+    const filler = document.getElementById('filler');
+    const PALETTE = ['#2DD4BF', '#4f46e5', '#f59e0b', '#db2777', '#0ea5e9', '#16a34a', '#7c3aed'];
+    let seed = 49500;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+    for (let i = 0; i < 300; i++) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const n = document.createElement('div');
+      n.className = 'n';
+      n.textContent = '#' + String(i + 1).padStart(3, '0');
+      const t = document.createElement('div');
+      t.className = 't';
+      t.innerHTML =
+        '<b>Section ' + (i + 1) + '</b> — mid-document block ' +
+        Math.round(60 + rnd() * 900) +
+        'px into the page, with enough body copy to make the line solid rather than a hairline.';
+      const b = document.createElement('div');
+      b.className = 'b';
+      b.style.background = PALETTE[i % PALETTE.length];
+      row.appendChild(n);
+      row.appendChild(t);
+      row.appendChild(b);
+      host.appendChild(row);
+    }
+
+    function fit() {
+      filler.style.height = Math.max(0, TARGET - document.documentElement.scrollHeight) + 'px';
+    }
+    fit();
+    window.addEventListener('load', fit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  })();
+</script>
+
+</body>
+</html>

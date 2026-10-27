@@ -98,6 +98,20 @@ let offscreenPort: chrome.runtime.Port | null = null;
  * "the offscreen is listening and can receive stitch traffic".
  */
 let offscreenPortReady = false;
+
+/**
+ * Relayed offscreen requests → the content request that caused them.
+ *
+ * The offscreen gets its own request id, so its replies cannot be
+ * correlated with the content script's request on their own. This map
+ * keeps the link so that an offscreen failure (e.g. the stitch canvas
+ * exceeding Chrome's 65_535px limit once the real device scale is
+ * known) can be reported to the exact caller instead of vanishing.
+ *
+ * Entries are removed as soon as they are answered — see the
+ * `wireOffscreenPort` listener.
+ */
+const offscreenRelays = new Map<string, { port: chrome.runtime.Port; requestId: string }>();
 /** Resolvers waiting for the offscreen document to connect + handshake. */
 const offscreenWaiters = new Set<(port: chrome.runtime.Port) => void>();
 
@@ -420,6 +434,40 @@ function wireOffscreenPort(port: chrome.runtime.Port): void {
       offscreenPortReady = true;
       console.info('[shotly:bg] offscreen document ready');
       flushOffscreenWaiters(port);
+      return;
+    }
+    // ⚠️ Offscreen errors used to die here.
+    //
+    // The offscreen document is the only place that can fail *after* the
+    // content script handed over a request — e.g. the stitch canvas turns
+    // out to exceed Chrome's 65_535px canvas limit once the real device
+    // scale is known. The offscreen answers with `<type>:error`, but this
+    // listener used to drop everything that was not ready/pong, so the
+    // content script sat waiting for an ack that never came and the popup
+    // hung until the 30s request timeout fired with a misleading
+    // "timed out" message.
+    //
+    // Now the error is routed back to the exact content request that
+    // caused it (the relay map remembers the original request id), so the
+    // user sees the real reason.
+    if (typeof env?.type === 'string' && env.type.endsWith(':error')) {
+      const relay = offscreenRelays.get(env.id);
+      offscreenRelays.delete(env.id);
+      const message = (env.payload as { message?: string } | undefined)?.message ?? env.type;
+      console.error(`[shotly:bg] offscreen error (${env.type}): ${message}`);
+      if (relay) {
+        try {
+          relay.port.postMessage({
+            v: PROTOCOL_VERSION,
+            id: relay.requestId,
+            scope: 'bg',
+            type: env.type,
+            payload: { message },
+          } satisfies Envelope);
+        } catch {
+          /* content port already closed */
+        }
+      }
     }
   });
 
@@ -578,7 +626,8 @@ async function handlePortMessage(
     case CAPTURE_MSG.INIT_STITCH: {
       const payload = env.payload as InitStitchPayload;
       const offscreen = await getOffscreenPort();
-      relayToOffscreen(offscreen, CAPTURE_MSG.INIT_STITCH, payload);
+      const relayId = relayToOffscreen(offscreen, CAPTURE_MSG.INIT_STITCH, payload);
+      offscreenRelays.set(relayId, { port, requestId: env.id });
       port.postMessage({
         v: PROTOCOL_VERSION,
         id: env.id,
@@ -593,7 +642,8 @@ async function handlePortMessage(
     case CAPTURE_MSG.STITCH_CHUNK: {
       const payload = env.payload as StitchChunkPayload;
       const offscreen = await getOffscreenPort();
-      relayToOffscreen(offscreen, CAPTURE_MSG.STITCH_CHUNK, payload);
+      const relayId = relayToOffscreen(offscreen, CAPTURE_MSG.STITCH_CHUNK, payload);
+      offscreenRelays.set(relayId, { port, requestId: env.id });
       port.postMessage({
         v: PROTOCOL_VERSION,
         id: env.id,
@@ -776,6 +826,14 @@ async function captureVisibleTab(
 
   // Decode dimensions from PNG header (cheap, no need to fully rasterize)
   const { width, height } = await readPngDimensions(dataUrl);
+
+  // The captured bitmap is in DEVICE pixels. The stitcher works in CSS
+  // pixels, so this is where the ratio shows up — log it, because a
+  // mismatch here is the difference between a sharp capture and a
+  // silently downscaled one.
+  console.info(
+    `[shotly:bg] capture chunk ${segmentIndex}: ${width}×${height} device px`,
+  );
 
   return {
     dataUrl,
@@ -1063,11 +1121,12 @@ function relayToOffscreen(
   port: chrome.runtime.Port,
   type: string,
   payload: unknown,
-): void {
+): string {
+  const id = crypto.randomUUID();
   try {
     port.postMessage({
       v: PROTOCOL_VERSION,
-      id: crypto.randomUUID(),
+      id,
       scope: 'bg',
       type,
       payload,
@@ -1080,6 +1139,7 @@ function relayToOffscreen(
       `[shotly:bg] failed to relay '${type}' to offscreen: ${describePortError(err)}`,
     );
   }
+  return id;
 }
 
 /**

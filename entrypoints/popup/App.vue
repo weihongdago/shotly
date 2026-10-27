@@ -129,10 +129,22 @@ function openPopupPort() {
           errorMsg.value = (env.payload as { message: string }).message;
           status.value = 'error';
           break;
-        case 'screenshot:too-long':
-          errorMsg.value = `Page too long: ${(env.payload as { totalHeight: number }).totalHeight}px > 50_000px limit`;
+        case 'screenshot:too-long': {
+          // The content script sends the *effective* limit — it depends on
+          // the device pixel ratio, because the stitch canvas is sized in
+          // device pixels and Chrome refuses canvases taller than 65_535px.
+          const p = env.payload as {
+            totalHeight: number;
+            limit: number;
+            devicePixelRatio?: number;
+            reason?: string;
+          };
+          errorMsg.value = p.reason
+            ? `Page too long: ${p.reason}`
+            : `Page too long: ${p.totalHeight}px > ${p.limit}px limit`;
           status.value = 'error';
           break;
+        }
         // Region flow (architecture §3.2): the user finished dragging the
         // rectangle → the capture starts.
         case REGION_MSG.SELECTED:

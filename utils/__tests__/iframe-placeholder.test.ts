@@ -2,11 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   countCrossOriginIframes,
   installIframePlaceholders,
+  isCrossOriginIframe,
   restoreIframes,
   type PlaceholderRecord,
 } from '../iframe-placeholder';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * The page origin every test pretends to live on.
+ *
+ * Detection is URL-based (see `isCrossOriginIframe`), so the tests must
+ * use URLs relative to THIS origin — otherwise "same-origin" and
+ * "cross-origin" would depend on the test runner's own location.
+ */
+const PAGE_ORIGIN = 'https://example.com';
 
 function makeIframe(src: string, isCrossOrigin = true): HTMLIFrameElement {
   const iframe = document.createElement('iframe');
@@ -25,6 +35,11 @@ function makeIframe(src: string, isCrossOrigin = true): HTMLIFrameElement {
   return iframe;
 }
 
+/** Same-origin iframe (relative URL, inherits the page origin). */
+function makeSameOriginIframe(src = '/child.html'): HTMLIFrameElement {
+  return makeIframe(src, false);
+}
+
 function clearBody() {
   document.body.innerHTML = '';
 }
@@ -35,7 +50,7 @@ describe('iframe-placeholder (architecture §3.2)', () => {
   beforeEach(() => {
     clearBody();
     Object.defineProperty(window, 'location', {
-      value: { href: 'https://example.com/' },
+      value: { href: `${PAGE_ORIGIN}/` },
       writable: true,
       configurable: true,
     });
@@ -48,7 +63,7 @@ describe('iframe-placeholder (architecture §3.2)', () => {
   });
 
   it('leaves same-origin iframes alone', () => {
-    const iframe = makeIframe('https://example.com/embed', false);
+    const iframe = makeSameOriginIframe();
     document.body.append(iframe);
     expect(installIframePlaceholders()).toEqual([]);
     expect(iframe.parentNode).toBe(document.body);
@@ -96,13 +111,14 @@ describe('iframe-placeholder (architecture §3.2)', () => {
     expect(rec.placeholder.innerHTML).not.toContain('"<');
   });
 
-  it('placeholder always has a hostname (empty src → falls back to location hostname)', () => {
-    // happy-dom normalizes empty src to the location URL, so hostname is non-empty.
-    // Implementation: `hostname || 'inline-frame'` guarantees we never render empty.
+  it('an iframe without src is same-origin and left alone', () => {
+    // `<iframe>` with no src loads about:blank, which inherits the page
+    // origin — so it is NOT an embed from another site and must not get a
+    // placeholder.
     const iframe = makeIframe('', true);
     document.body.append(iframe);
-    const [rec] = installIframePlaceholders();
-    expect(rec.placeholder.innerHTML).toMatch(/(localhost|inline-frame)/);
+    expect(installIframePlaceholders()).toEqual([]);
+    expect(iframe.parentNode).toBe(document.body);
   });
 
   it('placeholder has min dimensions (width>=120, height>=60)', () => {
@@ -154,7 +170,7 @@ describe('iframe-placeholder (architecture §3.2)', () => {
   });
 
   it('mixed same-origin + cross-origin → only cross replaced', () => {
-    const same = makeIframe('https://example.com/embed', false);
+    const same = makeSameOriginIframe();
     const cross = makeIframe('https://youtube.com/embed/abc', true);
     document.body.append(same, cross);
     const records = installIframePlaceholders();
@@ -178,8 +194,15 @@ describe('iframe-placeholder (architecture §3.2)', () => {
 });
 
 describe('countCrossOriginIframes (architecture §3.2 telemetry)', () => {
-  beforeEach(() => clearBody());
-  afterEach(() => clearBody());
+  beforeEach(() => {
+    clearBody();
+    Object.defineProperty(window, 'location', {
+      value: { href: `${PAGE_ORIGIN}/` },
+      writable: true,
+      configurable: true,
+    });
+  });
+  afterEach(() => clearBody);
 
   it('returns 0 when no iframes', () => {
     expect(countCrossOriginIframes()).toBe(0);
@@ -187,7 +210,7 @@ describe('countCrossOriginIframes (architecture §3.2 telemetry)', () => {
 
   it('counts only cross-origin', () => {
     document.body.append(
-      makeIframe('https://example.com/embed', false),
+      makeSameOriginIframe(),
       makeIframe('https://youtube.com/embed/1', true),
       makeIframe('https://vimeo.com/video/2', true),
     );
@@ -216,6 +239,81 @@ describe('PlaceholderRecord shape', () => {
     expect(rec.nextSibling).toBe(tail);
     expect(rec.placeholder).toBeInstanceOf(HTMLElement);
     expect(typeof rec.originalDisplay).toBe('string');
+  });
+});
+
+// ─── The detection race (regression) ─────────────────────────────────────────
+
+describe('isCrossOriginIframe — URL-based detection (not contentDocument)', () => {
+  beforeEach(() => {
+    clearBody();
+    Object.defineProperty(window, 'location', {
+      value: { href: `${PAGE_ORIGIN}/` },
+      writable: true,
+      configurable: true,
+    });
+  });
+  afterEach(clearBody);
+
+  it('still detects a cross-origin iframe that has NOT loaded yet', () => {
+    // ⚠️ This is the regression. The old implementation asked
+    // `iframe.contentDocument` and caught the SecurityError. A cross-origin
+    // iframe that has not finished loading still exposes its initial
+    // about:blank document — the access SUCCEEDS, so the old code treated
+    // it as same-origin and left it alone. The embed then showed up as a
+    // blank hole in the stitched screenshot, with zero errors anywhere.
+    // On a slow connection (when a screenshot matters most) this was
+    // guaranteed.
+    const iframe = document.createElement('iframe');
+    iframe.src = 'https://slow.example.org/embed';
+    Object.defineProperty(iframe, 'contentDocument', {
+      get() {
+        // Pretend the frame has not navigated yet → about:blank, readable.
+        return {} as Document;
+      },
+      configurable: true,
+    });
+    document.body.append(iframe);
+
+    expect(isCrossOriginIframe(iframe)).toBe(true);
+    const records = installIframePlaceholders();
+    expect(records).toHaveLength(1);
+    expect(iframe.parentNode).toBeNull();
+  });
+
+  it('treats an about:blank iframe as same-origin', () => {
+    const iframe = document.createElement('iframe');
+    iframe.src = 'about:blank';
+    document.body.append(iframe);
+    expect(isCrossOriginIframe(iframe)).toBe(false);
+  });
+
+  it('treats a srcdoc iframe as same-origin', () => {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('srcdoc', '<p>hello</p>');
+    document.body.append(iframe);
+    expect(isCrossOriginIframe(iframe)).toBe(false);
+  });
+
+  it('treats a relative URL as same-origin', () => {
+    const iframe = document.createElement('iframe');
+    iframe.src = 'child.html';
+    document.body.append(iframe);
+    expect(isCrossOriginIframe(iframe)).toBe(false);
+  });
+
+  it('treats a different port on the same host as cross-origin', () => {
+    const iframe = document.createElement('iframe');
+    iframe.src = `${PAGE_ORIGIN}:8443/embed`;
+    document.body.append(iframe);
+    expect(isCrossOriginIframe(iframe)).toBe(true);
+  });
+
+  it('treats http vs https on the same host as cross-origin', () => {
+    const iframe = document.createElement('iframe');
+    iframe.src = 'http://example.com/embed';
+    document.body.append(iframe);
+    expect(isCrossOriginIframe(iframe)).toBe(true);
   });
 });
 

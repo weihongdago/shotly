@@ -20,6 +20,54 @@ export interface PlaceholderRecord {
 }
 
 /**
+ * Is this iframe cross-origin?
+ *
+ * ⚠️ Do NOT decide this by touching `iframe.contentDocument` — that is a
+ * race. A cross-origin iframe that has not finished loading still exposes
+ * its initial `about:blank` document, so the access *succeeds* and the
+ * iframe is wrongly treated as same-origin. The placeholder is then never
+ * installed and the embed shows up as a blank hole in the stitched image.
+ * On a slow network (exactly when you most want a working screenshot) that
+ * is guaranteed to happen.
+ *
+ * The reliable signal is the **URL**: compare the iframe's resolved origin
+ * with the document's origin. `about:blank` and `srcdoc` frames inherit
+ * the parent's origin, so they stay same-origin.
+ */
+export function isCrossOriginIframe(iframe: HTMLIFrameElement): boolean {
+  const src = iframe.getAttribute('src') ?? '';
+  // `srcdoc` frames inherit the parent origin — always same-origin.
+  if (iframe.hasAttribute('srcdoc')) return false;
+  if (!src) return false;
+
+  let resolved: URL;
+  try {
+    resolved = new URL(src, location.href);
+  } catch {
+    // Unparseable src → treat as cross-origin, better safe than sorry.
+    return true;
+  }
+  // `about:blank` inherits the parent's origin.
+  if (resolved.protocol === 'about:') return false;
+  return resolved.origin !== pageOrigin();
+}
+
+/**
+ * The document's own origin.
+ *
+ * Derived from `location.href` rather than `location.origin` because the
+ * latter is not available in every host (and is undefined in the test
+ * environment, where `location` is stubbed).
+ */
+function pageOrigin(): string {
+  try {
+    return new URL(location.href).origin;
+  } catch {
+    return location.origin ?? '';
+  }
+}
+
+/**
  * Walk the document, find cross-origin iframes, swap them with placeholders.
  * Returns a list of records so the caller can restore after capture.
  *
@@ -30,15 +78,7 @@ export function installIframePlaceholders(): PlaceholderRecord[] {
   const iframes = document.querySelectorAll('iframe');
 
   for (const iframe of Array.from(iframes)) {
-    try {
-      // Same-origin → leave alone (we can recurse later in v1.1)
-      // Note: accessing iframe.contentDocument throws on cross-origin
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      iframe.contentDocument;
-      continue;
-    } catch {
-      // Cross-origin — fall through to placeholder
-    }
+    if (!isCrossOriginIframe(iframe)) continue;
 
     const src = iframe.src || '';
     let hostname = 'unknown';
@@ -107,12 +147,7 @@ export function restoreIframes(records: PlaceholderRecord[]): void {
 export function countCrossOriginIframes(): number {
   let n = 0;
   for (const iframe of Array.from(document.querySelectorAll('iframe'))) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      iframe.contentDocument;
-    } catch {
-      n++;
-    }
+    if (isCrossOriginIframe(iframe)) n++;
   }
   return n;
 }

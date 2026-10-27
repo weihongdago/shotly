@@ -35,6 +35,9 @@
   .catlinks li { background: #eaecf0; padding: 3px 8px; border-radius: 2px; }
   .catlinks a { color: #3366cc; text-decoration: none; }
   .footer-note { margin-top: 30px; font-size: 12px; color: var(--muted); }
+  .filler { margin: 0; }
+  .reflist { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; padding-left: 20px; }
+  .reflist li { margin: 5px 0; }
 </style>
 </head>
 <body>
@@ -94,7 +97,49 @@
   </ul>
 </div>
 
+<h2 id="see-also-1">See also</h2>
+<ul class="reflist">
+  <li>Web page</li>
+  <li>Screen capture</li>
+  <li>Scrolling</li>
+  <li>Canvas (HTML element)</li>
+</ul>
+
+<p>A whole-page screenshot is useful whenever the thing worth keeping does not fit on one screen: a long article, a multi-page document read in a single column, a chat transcript, a receipt, a dashboard that scrolls. The alternative — taking three screenshots and stitching them by hand — produces exactly the kind of result this technique exists to avoid.</p>
+
+<h2 id="limitations">Limitations</h2>
+<p>Several classes of content resist any scroll-and-stitch approach. Video elements that are playing change between the moment they are scrolled into view and the moment they are captured. <code>position: fixed</code> overlays that are taller than the viewport cannot be reproduced faithfully at all, because there is no single scroll position at which they appear as they do on screen. Pages that render their content only after a user gesture — a paywall, a "show more" button, a tab that must be clicked — will capture an empty shell.</p>
+
+<p>There is also the question of what happens to the page while the capture runs. Scrolling a document that listens for scroll events triggers whatever behaviour the author attached to it: lazy-load handlers, infinite scroll, parallax effects, analytics. A tool that scrolls aggressively can change the very document it is trying to record.</p>
+
+<h2 id="see-also-2">See also</h2>
+<ul class="reflist">
+  <li>Web archiving</li>
+  <li>Long screenshot</li>
+  <li>Document scanning</li>
+</ul>
+
+<p>None of these are reasons to abandon the approach; they are reasons to give the user a way out. A region capture, a retry, and an honest error message are all better than a silently wrong image.</p>
+
 <p class="footer-note">This page is a local fixture used for automated capture testing. It imitates the structure of a Wikipedia article — infobox, table of contents, wikitable, category links — so that a whole-page capture produces a representative result.</p>
+
+<div class="filler" id="filler"></div>
+
+<script>
+  // The scenario expects a page in the 4,500 – 5,500px band, so that a
+  // standard 800px viewport has to take seven slices to cover it. A fixed
+  // spacer would drift whenever the copy above changes, so the height is
+  // measured and adjusted to land on the target.
+  (function () {
+    const TARGET = 5000;
+    const filler = document.getElementById('filler');
+    function fit() {
+      filler.style.height = Math.max(0, TARGET - document.documentElement.scrollHeight) + 'px';
+    }
+    fit();
+    window.addEventListener('load', fit);
+  })();
+</script>
 
 </body>
 </html>

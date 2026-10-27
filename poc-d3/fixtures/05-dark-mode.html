@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Shotly PoC S5c — Dark mode</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0d1117; color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+  }
+  header { padding: 34px 40px 20px; border-bottom: 1px solid #21262d; }
+  h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -0.02em; }
+  .lede { margin: 0; color: #8b949e; font-size: 16px; }
+  main { padding: 28px 40px 60px; max-width: 860px; }
+  h2 { font-size: 21px; margin: 34px 0 10px; }
+  p { font-size: 15.5px; margin: 0 0 14px; color: #c9d1d9; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 1px 6px; font-size: 13.5px; color: #79c0ff; }
+  pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; overflow: hidden; }
+  pre code { background: none; border: 0; padding: 0; color: #c9d1d9; font-size: 13px; line-height: 1.6; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 20px; margin: 20px 0; }
+  .card .k { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; }
+  .card .v { font-size: 28px; font-weight: 700; margin-top: 6px; }
+  /* The iframe placeholder uses a light mint left bar (#2DD4BF). On a dark
+     background it must still be visible — that is the contrast check. */
+  .placeholder-probe { margin: 24px 0; padding: 14px 16px; border-radius: 10px; background: #161b22; border: 1px solid #30363d; border-left: 4px solid #2DD4BF; color: #c9d1d9; font-size: 14px; display: flex; gap: 12px; align-items: center; }
+  .placeholder-probe .pin { font-size: 20px; }
+  ul { color: #c9d1d9; font-size: 15.5px; padding-left: 22px; }
+  .filler { margin: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dark mode document</h1>
+  <p class="lede">The page declares <code>color-scheme: dark</code>. A correct capture keeps the dark background instead of painting over it with white.</p>
+</header>
+
+<main>
+  <h2>Why the canvas fill matters</h2>
+  <p>The stitcher initialises its canvas with a white fill so that regions nothing was drawn into do not come out transparent. The risk is timing: if that fill runs <em>after</em> the slices are drawn, every slice is erased.</p>
+  <p>The order has to be fill first, then draw. A capture that comes out white on a dark page is almost always this mistake rather than a browser quirk.</p>
+
+  <div class="card">
+    <div class="k">Expected background</div>
+    <div class="v">#0d1117</div>
+  </div>
+
+  <h2>Placeholder contrast</h2>
+  <p>The cross-origin iframe placeholder is a light block with a mint left bar. Dropped onto a dark page it has to stay readable, and it has to keep the exact box of the frame it replaces.</p>
+
+  <div class="placeholder-probe">
+    <span class="pin">📎</span>
+    <span><strong>example.com</strong> <span style="color:#8b949e">(embedded)</span></span>
+  </div>
+
+  <h2>Code block</h2>
+  <pre><code>ctx.fillStyle = '#FFFFFF';
+ctx.fillRect(0, 0, canvas.width, canvas.height);   // fill first
+for (const slice of slices) {
+  ctx.drawImage(bitmap, sx, sy, sw, sh, dx, dy, dw, dh);  // then draw
+}</code></pre>
+
+  <h2>What to look for</h2>
+  <ul>
+    <li>The body background stays dark, not white.</li>
+    <li>Text renders light-on-dark, so the capture is legible.</li>
+    <li>The mint accent bar is still clearly mint, not muddied into the background.</li>
+    <li>Syntax colours survive the round trip.</li>
+  </ul>
+
+  <p>More filler below, so the page has a little height.</p>
+  <div class="filler" id="filler"></div>
+</main>
+
+<script>
+  (function () {
+    const TARGET = 3600;
+    const filler = document.getElementById('filler');
+    function fit() {
+      filler.style.height = Math.max(0, TARGET - document.documentElement.scrollHeight) + 'px';
+    }
+    fit();
+    window.addEventListener('load', fit);
+  })();
+</script>
+
+</body>
+</html>

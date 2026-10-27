@@ -221,6 +221,22 @@ export interface StitchChunkPayload {
   viewportWidth: number;
   offsetY: number;
   /**
+   * Device pixels per CSS pixel for this bitmap.
+   *
+   * Resolved by the content script (`resolveDeviceScale`) — it can see both
+   * the page's `devicePixelRatio` and the real bitmap size, so it is the
+   * only place that can get this right.
+   *
+   * ⚠️ The stitcher MUST use this exact number for the canvas size and
+   * the draw rectangles. Deriving its own scale from the bitmap makes the
+   * image stretch: `captureVisibleTab` grabs the browser *widget*, which
+   * is often larger than the page's layout viewport (a 1282×839 widget
+   * rasterising a 1280×800 viewport reads as 2.0975× instead of 2×), and
+   * the crop the content script computed with the true scale no longer
+   * matches the destination rect.
+   */
+  deviceScaleRatio?: number;
+  /**
    * Optional crop window (bitmap pixels). When present the offscreen
    * stitcher draws only that sub-rect of the bitmap — this is how the
    * region pipeline stitches several *viewport* captures into one image.
@@ -231,8 +247,32 @@ export interface StitchChunkPayload {
 }
 
 export interface InitStitchPayload {
+  /**
+   * Canvas width in **CSS px** — for the full-page flow this is the page
+   * viewport width, for the region flow it is the selected region width.
+   */
   viewportWidth: number;
+  /** Canvas height in **CSS px** (the page height / region height). */
   totalHeight: number;
+  /**
+   * The page's viewport size in CSS px.
+   *
+   * Needed even when `viewportWidth` is NOT the page width (region flow:
+   * the canvas is the region, but the bitmaps are full viewports). The
+   * stitcher uses it to interpret the bitmap's pixel geometry.
+   */
+  pageViewportWidth: number;
+  /** The page's viewport height in CSS px (same reasoning as above). */
+  pageViewportHeight: number;
+  /**
+   * The page's `devicePixelRatio`.
+   *
+   * Only a *starting hint* for the stitcher: the authoritative scale is
+   * resolved per chunk from the real bitmap (`StitchChunkPayload
+   * .deviceScaleRatio`) because `captureVisibleTab` grabs the browser
+   * widget, whose size can differ from the page's layout viewport.
+   */
+  pageDevicePixelRatio?: number;
 }
 
 export interface FinalizeResponse {
@@ -303,6 +343,17 @@ export function requestOverPort<TReq, TRes>(
       if (env?.id !== id) return;
       clearTimeout(timer);
       port.onMessage.removeListener(listener);
+      // An error envelope is a *reply* to this request — reject with the
+      // real reason instead of resolving with an envelope the caller
+      // would have to know to inspect. Otherwise a failure surfaces as a
+      // confusing "empty payload" further down the pipeline.
+      if (typeof env.type === 'string' && env.type.endsWith(':error')) {
+        const message =
+          (env.payload as { message?: string } | undefined)?.message ??
+          `request '${type}' failed`;
+        reject(new Error(message));
+        return;
+      }
       resolve(env as Envelope<TRes>);
     }
 

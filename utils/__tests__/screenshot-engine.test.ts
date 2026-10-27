@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_SEGMENT_HEIGHT,
   HARD_PAGE_LIMIT_PX,
+  MAX_CANVAS_DIMENSION_PX,
   PER_SEGMENT_BUFFER_MS,
+  exceedsCanvasLimit,
   hideFixedElements,
   isPageTooLong,
+  maxAllowedCssHeight,
   planCapture,
   primeLazyImages,
+  resolveDeviceScale,
   restoreFixedElements,
   type ScreenshotPlan,
 } from '../screenshot-engine';
@@ -276,5 +280,111 @@ describe('ScreenshotPlan shape (compile + runtime sanity)', () => {
     expect(plan).toHaveProperty('viewportWidth');
     expect(plan).toHaveProperty('devicePixelRatio');
     expect(Array.isArray(plan.segments)).toBe(true);
+  });
+});
+
+// ─── Device-pixel limits (DPR-aware) ─────────────────────────────────────────
+
+describe('device-pixel canvas limits', () => {
+  it('MAX_CANVAS_DIMENSION_PX = 65_535 (Chrome max canvas dimension)', () => {
+    // Measured, not guessed — see test-infra/probe-canvas-limits.mjs:
+    // 2560×60_000 works, 2560×70_000 fails, even though the latter has
+    // *more* pixels. The binding constraint is the dimension, not the area.
+    expect(MAX_CANVAS_DIMENSION_PX).toBe(65_535);
+  });
+
+  it('maxAllowedCssHeight at DPR=1 is the architecture limit', () => {
+    expect(maxAllowedCssHeight(1)).toBe(HARD_PAGE_LIMIT_PX);
+    expect(maxAllowedCssHeight(1)).toBe(50_000);
+  });
+
+  it('maxAllowedCssHeight shrinks as the DPR grows', () => {
+    expect(maxAllowedCssHeight(2)).toBe(32_767);
+    expect(maxAllowedCssHeight(3)).toBe(21_845);
+    expect(maxAllowedCssHeight(2)).toBeLessThan(maxAllowedCssHeight(1));
+  });
+
+  it('maxAllowedCssHeight treats a nonsense scale as 1', () => {
+    expect(maxAllowedCssHeight(0)).toBe(HARD_PAGE_LIMIT_PX);
+    expect(maxAllowedCssHeight(-1)).toBe(HARD_PAGE_LIMIT_PX);
+    expect(maxAllowedCssHeight(Number.NaN)).toBe(HARD_PAGE_LIMIT_PX);
+  });
+
+  it('exceedsCanvasLimit allows a 50k page at DPR=1', () => {
+    expect(exceedsCanvasLimit(1280, 50_000, 1)).toBe(false);
+  });
+
+  it('exceedsCanvasLimit rejects the same page at DPR=2', () => {
+    // 50_000 CSS px × 2 = 100_000 device px > 65_535 → refused up front.
+    expect(exceedsCanvasLimit(1280, 50_000, 2)).toBe(true);
+  });
+
+  it('exceedsCanvasLimit allows the PoC-D3 S2 target at DPR=2', () => {
+    // 30_000 CSS px × 2 = 60_000 device px — still inside the limit.
+    expect(exceedsCanvasLimit(1280, 30_000, 2)).toBe(false);
+  });
+
+  it('exceedsCanvasLimit also guards the width', () => {
+    expect(exceedsCanvasLimit(70_000, 800, 1)).toBe(true);
+    expect(exceedsCanvasLimit(1280, 800, 1)).toBe(false);
+  });
+
+  it('exceedsCanvasLimit treats a nonsense scale as 1', () => {
+    expect(exceedsCanvasLimit(1280, 50_000, 0)).toBe(false);
+    expect(exceedsCanvasLimit(1280, 50_000, Number.NaN)).toBe(false);
+  });
+});
+
+// ─── Device scale resolution ─────────────────────────────────────────────────
+
+describe('resolveDeviceScale', () => {
+  it('trusts the page DPR when the bitmap can hold the viewport at that scale', () => {
+    // A real Retina browser: layout viewport 1280×800, raster 2560×1600.
+    const r = resolveDeviceScale(1280, 800, 2560, 1600, 2);
+    expect(r).toEqual({ scale: 2, source: 'dpr' });
+  });
+
+  it('ignores widget overhang (bitmap LARGER than the layout viewport)', () => {
+    // ⚠️ The bug this whole function exists for. `captureVisibleTab`
+    // grabs the browser *widget*, which can be bigger than the page's
+    // layout viewport (measured: a 1282×839 widget rasterising a
+    // 1280×800 layout viewport → 2564×1678 device px).
+    //
+    // Naively computing bitmap.height / viewportHeight gives 1678/800 =
+    // 2.0975 — a 4.9% vertical stretch, silently, with no error. The
+    // marker probe (probe-marker-mapping.mjs) proves the real scale is
+    // exactly 2: markers at CSS y=100/300/500/700 landed on bitmap rows
+    // 200/600/1000/1400.
+    const r = resolveDeviceScale(1280, 800, 2564, 1678, 2);
+    expect(r).toEqual({ scale: 2, source: 'dpr' });
+  });
+
+  it('falls back to the bitmap when the raster is coarser than the DPR claims', () => {
+    // Playwright's CDP deviceScaleFactor emulation: the page believes it
+    // is on a 2× screen, but the widget still rasters at 1×. Trusting the
+    // DPR here would upscale a 1× bitmap into a 2× canvas — soft, blurry,
+    // twice the memory for no extra detail.
+    const r = resolveDeviceScale(1280, 800, 1282, 839, 2);
+    expect(r.source).toBe('bitmap');
+    expect(r.scale).toBeCloseTo(1.0015, 3);
+  });
+
+  it('uses the smaller ratio when falling back (widget overhang inflates it)', () => {
+    // width ratio 1.0015, height ratio 1.0488 → the tighter (width) fit
+    // is the honest one.
+    const r = resolveDeviceScale(1280, 800, 1282, 839, 2);
+    expect(r.scale).toBeLessThan(1.0488);
+  });
+
+  it('treats a nonsensical DPR as 1', () => {
+    expect(resolveDeviceScale(1280, 800, 1280, 800, 0).scale).toBe(1);
+    expect(resolveDeviceScale(1280, 800, 1280, 800, Number.NaN).scale).toBe(1);
+    expect(resolveDeviceScale(1280, 800, 1280, 800, -3).scale).toBe(1);
+  });
+
+  it('survives a zero-sized viewport', () => {
+    const r = resolveDeviceScale(0, 0, 0, 0, 2);
+    expect(Number.isFinite(r.scale)).toBe(true);
+    expect(r.scale).toBeGreaterThan(0);
   });
 });

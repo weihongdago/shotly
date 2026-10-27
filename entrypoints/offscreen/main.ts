@@ -30,6 +30,7 @@ import {
   type InitStitchPayload,
   type StitchChunkPayload,
 } from '../../utils/messaging';
+import { MAX_CANVAS_DIMENSION_PX } from '../../utils/screenshot-engine';
 import { EXPORT_MIME, pdfPageSizeFor } from '../../utils/export';
 import { PDFDocument } from 'pdf-lib';
 
@@ -40,6 +41,24 @@ interface StitchState {
   ctx: OffscreenCanvasRenderingContext2D;
   viewportWidth: number;
   totalHeight: number;
+  /** Page viewport size in CSS px — used to derive the device scale. */
+  pageViewportWidth: number;
+  pageViewportHeight: number;
+  /**
+   * The page's `devicePixelRatio` — a *hint* only.
+   *
+   * The authoritative scale arrives with the first chunk
+   * (`StitchChunkPayload.deviceScaleRatio`): the content script resolves
+   * it from the page's DPR *and* the real bitmap size, because the
+   * offscreen document only sees the bitmap — and a widget larger than the
+   * layout viewport makes the bitmap-derived ratio read too high.
+   */
+  pageDevicePixelRatio: number | null;
+  /** The scale actually used, and where it came from. */
+  scale: number;
+  scaleSource: 'chunk' | 'page' | 'bitmap';
+  /** True once the canvas has been sized in device pixels. */
+  scaled: boolean;
   chunksWritten: number;
   offsetsByIndex: Map<number, number>;
   blobUrl: string | null;
@@ -260,7 +279,9 @@ async function handleInitStitch(
   port: chrome.runtime.Port,
   env: Envelope,
 ): Promise<void> {
-  const { viewportWidth, totalHeight } = env.payload as InitStitchPayload;
+  const payload = env.payload as Partial<InitStitchPayload>;
+  const viewportWidth = payload.viewportWidth as number;
+  const totalHeight = payload.totalHeight as number;
   if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
     throw new Error(`init-stitch: bad viewportWidth=${viewportWidth}`);
   }
@@ -271,6 +292,9 @@ async function handleInitStitch(
   // Drop any prior canvas to free memory before allocating new one.
   resetState();
 
+  // The canvas is created at 1× (CSS px) here and re-created at device
+  // resolution once the first bitmap reveals the real scale — see
+  // `ensureDeviceScale()`.
   const canvas = new OffscreenCanvas(viewportWidth, totalHeight);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('[shotly:offscreen] 2d context unavailable');
@@ -284,13 +308,27 @@ async function handleInitStitch(
     ctx,
     viewportWidth,
     totalHeight,
+    // Fall back to the canvas size when the caller did not send the page
+    // viewport (older callers / region flow may omit it).
+    pageViewportWidth: Number.isFinite(payload.pageViewportWidth)
+      ? (payload.pageViewportWidth as number)
+      : viewportWidth,
+    pageViewportHeight: Number.isFinite(payload.pageViewportHeight)
+      ? (payload.pageViewportHeight as number)
+      : viewportWidth,
+    pageDevicePixelRatio: Number.isFinite(payload.pageDevicePixelRatio)
+      ? (payload.pageDevicePixelRatio as number)
+      : null,
+    scale: 1,
+    scaleSource: 'page',
+    scaled: false,
     chunksWritten: 0,
     offsetsByIndex: new Map(),
     blobUrl: null,
   };
 
   console.info(
-    `[shotly:offscreen] stitcher initialized ${viewportWidth}×${totalHeight} (~${((viewportWidth * totalHeight * 4) / (1024 * 1024)).toFixed(1)} MB)`,
+    `[shotly:offscreen] stitcher initialized ${viewportWidth}×${totalHeight} CSS px (scale pending first bitmap)`,
   );
 
   port.postMessage({
@@ -302,6 +340,88 @@ async function handleInitStitch(
   } satisfies Envelope);
 }
 
+/**
+ * Size the canvas in **device pixels**.
+ *
+ * Why this matters: `chrome.tabs.captureVisibleTab` returns a bitmap in
+ * device pixels. On a Retina display that is 2× the CSS viewport. If the
+ * canvas is sized in CSS pixels, the device-pixel bitmap is downscaled
+ * into it and the exported PNG comes out at half resolution — text that
+ * looks soft next to the page the user was looking at. That is the
+ * single most visible quality problem a screenshot tool can have.
+ *
+ * The scale comes from the content script (`resolveDeviceScale`), which
+ * has the page's `devicePixelRatio` AND the real bitmap size — the
+ * offscreen document only sees the bitmap, and deriving the scale from it
+ * alone is wrong whenever the browser widget is larger than the page's
+ * layout viewport (the raster then contains extra area and the ratio
+ * reads too high, silently stretching the image).
+ *
+ * Must be called before the first chunk is drawn — re-creating the canvas
+ * would throw away everything drawn so far.
+ */
+function ensureDeviceScale(bitmap: ImageBitmap, chunkScale: number | undefined): void {
+  if (!state || state.scaled) return;
+
+  // 1. The scale the content script used to compute the crop. This is the
+  //    only value guaranteed to match the crop → the crop and the
+  //    destination rect must speak the same language.
+  const reported = chunkScale;
+  let scale = Number.isFinite(reported) && reported! > 0 ? reported! : 0;
+  let source: 'chunk' | 'page' | 'bitmap' = 'chunk';
+
+  if (scale === 0) {
+    // 2. No scale on the chunk (older caller) — the page's DPR.
+    const hint = state.pageDevicePixelRatio;
+    if (Number.isFinite(hint) && hint! > 0) {
+      scale = hint!;
+      source = 'page';
+    }
+  }
+
+  if (scale === 0) {
+    // 3. Last resort — derive it from the bitmap. Take the smaller of the
+    // two ratios: the widget overhang can only make the ratio too big.
+    const byWidth = state.pageViewportWidth > 0 ? bitmap.width / state.pageViewportWidth : 0;
+    const byHeight = state.pageViewportHeight > 0 ? bitmap.height / state.pageViewportHeight : 0;
+    const candidates = [byWidth, byHeight].filter((v) => Number.isFinite(v) && v > 0);
+    scale = candidates.length ? Math.min(...candidates) : 1;
+    source = 'bitmap';
+  }
+
+  state.scale = scale;
+  state.scaleSource = source;
+
+  const deviceWidth = Math.ceil(state.viewportWidth * state.scale);
+  const deviceHeight = Math.ceil(state.totalHeight * state.scale);
+
+  if (deviceWidth > MAX_CANVAS_DIMENSION_PX || deviceHeight > MAX_CANVAS_DIMENSION_PX) {
+    throw new Error(
+      `[shotly:offscreen] stitch canvas ${deviceWidth}×${deviceHeight} exceeds Chrome's ${MAX_CANVAS_DIMENSION_PX}px canvas limit ` +
+        `(page ${state.viewportWidth}×${state.totalHeight} CSS px at ${state.scale.toFixed(2)}× DPR)`,
+    );
+  }
+
+  if (deviceWidth !== state.canvas.width || deviceHeight !== state.canvas.height) {
+    // Re-create at device resolution. Nothing has been drawn yet, so no
+    // content is lost.
+    state.canvas.width = 0;
+    state.canvas.height = 0;
+    const canvas = new OffscreenCanvas(deviceWidth, deviceHeight);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('[shotly:offscreen] 2d context unavailable');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, deviceWidth, deviceHeight);
+    state.canvas = canvas;
+    state.ctx = ctx;
+    console.info(
+      `[shotly:offscreen] canvas scaled to ${deviceWidth}×${deviceHeight} device px ` +
+        `(scale ${state.scale.toFixed(4)} from ${source}, ~${((deviceWidth * deviceHeight * 4) / (1024 * 1024)).toFixed(1)} MB)`,
+    );
+  }
+  state.scaled = true;
+}
+
 async function handleStitchChunk(
   port: chrome.runtime.Port,
   env: Envelope,
@@ -310,7 +430,8 @@ async function handleStitchChunk(
     throw new Error('stitch-chunk received before init-stitch');
   }
 
-  const { index, dataUrl, offsetY, segmentHeight, crop } = env.payload as StitchChunkPayload;
+  const { index, dataUrl, offsetY, segmentHeight, crop, deviceScaleRatio } =
+    env.payload as StitchChunkPayload;
 
   // Defensive bounds check — we must never draw past the canvas height
   const clampedOffsetY = Math.max(0, Math.min(offsetY, state.totalHeight - 1));
@@ -323,23 +444,34 @@ async function handleStitchChunk(
   try {
     const blob = await dataUrlToBlob(dataUrl);
     bitmap = await createImageBitmap(blob);
+    // The bitmap is in device pixels. Size the canvas to match before the
+    // first draw (no-op for every chunk after the first).
+    ensureDeviceScale(bitmap, deviceScaleRatio);
     // Source rect:
     //   - with a crop window (region pipeline): only the sub-rect that
     //     overlaps the selected region is drawn. The crop is expressed in
     //     bitmap (device) pixels, the destination in CSS pixels — the
     //     aspect ratio is preserved because the content script derived
     //     the crop from the bitmap's real pixel size.
-    //   - without a crop (full-page pipeline): keep the legacy behaviour
-    //     byte-for-byte — draw from the top-left, `segmentHeight` pixels
-    //     tall, so the existing output does not change.
+    //   - without a crop (full-page pipeline): draw from the top-left,
+    //     `segmentHeight` pixels tall.
     const srcX = crop?.sx ?? 0;
     const srcY = crop?.sy ?? 0;
     const srcW = crop?.sw ?? bitmap.width;
-    const srcH = crop?.sh ?? drawHeight;
+    const srcH = crop?.sh ?? Math.round(drawHeight * state.scale);
+    // Destination rect, in **device pixels** so the exported PNG keeps the
+    // full resolution of the screen it was captured from.
+    const dstX = 0;
+    const dstY = Math.round(clampedOffsetY * state.scale);
+    const dstW = Math.round(state.viewportWidth * state.scale);
+    const dstH = Math.min(
+      Math.round(drawHeight * state.scale),
+      Math.max(1, state.canvas.height - dstY),
+    );
     state.ctx.drawImage(
       bitmap,
       srcX, srcY, srcW, srcH, // src rect
-      0, clampedOffsetY, state.viewportWidth, drawHeight, // dst rect
+      dstX, dstY, dstW, dstH, // dst rect
     );
     state.chunksWritten += 1;
     state.offsetsByIndex.set(index, clampedOffsetY);
@@ -380,8 +512,10 @@ async function handleFinalize(
 
   const payload: FinalizeResponse = {
     blobUrl,
-    width: state.viewportWidth,
-    height: state.totalHeight,
+    // The canvas dimensions are the **device** pixels of the exported
+    // image — at DPR=2 a 1280px-wide page yields a 2560px-wide PNG.
+    width: state.canvas.width,
+    height: state.canvas.height,
     byteSize: blob.size,
   };
 

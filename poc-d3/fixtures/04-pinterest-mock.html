@@ -10,10 +10,8 @@
   .lede { color: #59636e; margin: 0 0 20px; font-size: 14px; }
   .masonry { columns: 6; column-gap: 14px; }
   .card { break-inside: avoid; margin: 0 0 14px; border-radius: 10px; overflow: hidden; background: #f6f8fa; border: 1px solid #eaeef2; }
-  .card .ph { width: 100%; background: linear-gradient(135deg, #2DD4BF, #0D9488); }
-  .card:nth-child(3n) .ph { background: linear-gradient(135deg, #a5b4fc, #4f46e5); }
-  .card:nth-child(5n) .ph { background: linear-gradient(135deg, #fde68a, #f59e0b); }
-  .card:nth-child(7n) .ph { background: linear-gradient(135deg, #fbcfe8, #db2777); }
+  /* The tile image itself — `loading="lazy"` is set in JS below. */
+  .card .ph { display: block; width: 100%; background: #eef1f4; }
   .card .meta { padding: 9px 11px; font-size: 12px; color: #59636e; }
   .card .meta b { display: block; color: #1f2328; font-size: 13px; margin-bottom: 2px; }
   .note { margin-top: 26px; padding: 13px 15px; border-left: 3px solid #2DD4BF; background: #f6f8fa; font-size: 13px; color: #59636e; }
@@ -22,7 +20,7 @@
 <body>
 
 <h1>Lazy-heavy masonry</h1>
-<p class="lede">200 tiles, every one of them <code>loading="lazy"</code>. A capture that scrolls too fast catches empty boxes; the settling delay per segment is what keeps them painted.</p>
+<p class="lede">200 <code>&lt;img loading="lazy"&gt;</code> tiles. A capture that scrolls too fast catches empty boxes; the settling delay per segment is what keeps them painted.</p>
 
 <div class="masonry" id="m"></div>
 
@@ -38,22 +36,53 @@
   let seed = 20261025;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
+  // ⚠️ The tiles are REAL <img> elements with `loading="lazy"`, not divs.
+  //
+  // The previous version of this fixture drew the tiles as <div>s with a
+  // `data-lazy` attribute — which meant the page never exercised
+  // `primeLazyImages()` at all (that function targets
+  // `img[loading="lazy"]`). The fixture looked like it tested lazy
+  // loading and tested nothing.
+  //
+  // The images are self-contained data URIs on purpose: the whole PoC
+  // suite has to run offline, with no third-party requests (privacy
+  // red line). Chrome still defers `loading="lazy"` images that are far
+  // outside the viewport, so the race the scenario cares about — "the
+  // tile is not painted yet when the segment is captured" — is real
+  // even without the network.
+  function tileSrc(color, w, h) {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+      '<rect width="100%" height="100%" fill="' + color + '"/>' +
+      '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
   for (let i = 0; i < 200; i++) {
     const card = document.createElement('div');
     card.className = 'card';
-    const ph = document.createElement('div');
-    ph.className = 'ph';
-    ph.style.height = Math.round(90 + rnd() * 190) + 'px';
+
+    const w = 240;
+    const h = Math.round(90 + rnd() * 190);
+    const color = COLORS[i % COLORS.length];
+
+    const img = document.createElement('img');
+    img.className = 'ph';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.width = w;
+    img.height = h;
+    img.alt = 'Tile ' + (i + 1);
+    img.src = tileSrc(color, w, h);
+
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.innerHTML = '<b>Tile ' + (i + 1) + '</b>lazy-loaded · ' + COLORS[i % COLORS.length];
-    card.appendChild(ph);
+    meta.innerHTML = '<b>Tile ' + (i + 1) + '</b>lazy-loaded · ' + color;
+
+    card.appendChild(img);
     card.appendChild(meta);
     host.appendChild(card);
   }
-
-  // Mark every tile as lazy — this is the whole point of the fixture.
-  host.querySelectorAll('.ph').forEach((el) => { el.setAttribute('data-lazy', 'true'); });
 </script>
 
 </body>

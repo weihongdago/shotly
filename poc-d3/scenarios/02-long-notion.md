@@ -15,7 +15,7 @@
 | Segment 数 | 7 ~ 9（30000 ÷ 4096） | ___ |
 | 单段耗时 | 1.8 ~ 2.5s（scroll + 1.5s buffer + capture） | ___ |
 | 总耗时 | < 30s（MV3 SW idle 阈值内） | ___ |
-| 输出尺寸 | ~2560 × 30000px（DPR=2 已内嵌到 dataUrl） | ___ |
+| 输出尺寸 | ~2560 × 60000 **设备像素**（CSS 页面 1280×30000，DPR=2 已内嵌到 dataUrl） | ___ |
 | 文件大小 | 1 ~ 4 MB PNG | ___ |
 | 内存峰值 | ~25MB OffscreenCanvas | ___ |
 
@@ -61,7 +61,7 @@
   "page": { "totalHeight": 30000 },
   "segments": 8,
   "durationMs": 27500,
-  "output": { "width": 2560, "height": 30000, "byteSize": 2400000 },
+  "output": { "width": 2560, "height": 60000, "byteSize": 2400000 },
   "method": "A",
   "retries": 0,
   "events": [

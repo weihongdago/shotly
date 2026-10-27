@@ -158,6 +158,145 @@ export function isPageTooLong(plan: ScreenshotPlan): boolean {
   return plan.totalHeight > HARD_PAGE_LIMIT_PX;
 }
 
+// ─── Device-pixel (DPR) limits ───────────────────────────────────────────────
+
+/**
+ * Chrome's maximum canvas dimension, in device pixels.
+ *
+ * This — not memory — is the binding constraint for the stitch canvas.
+ * Measured on this machine (test-infra/probe-canvas-limits.mjs):
+ *
+ *   2560 × 60_000  → OK    (153.6M px, 586 MB)
+ *   2560 × 70_000  → FAIL  (179.2M px, 684 MB)
+ *   1920 × 80_000  → FAIL  (153.6M px, 586 MB)  ← same area as the OK case
+ *   1280 × 100_000 → FAIL  (128.0M px, 488 MB)
+ *
+ * The failures are exactly the canvases taller than 65_535 px, while a
+ * *shorter* canvas with a *larger* area still works. So the rule is a
+ * maximum **dimension**, not a maximum area. When the allocation fails
+ * Chrome silently hands back a zero-size canvas and `convertToBlob` throws
+ * "IndexSizeError: The size of OffscreenCanvas is zero" — a confusing
+ * error that looks like a Shotly bug, so we refuse the capture up front
+ * with a readable message instead.
+ */
+/**
+ * Chrome's maximum canvas dimension (width OR height), in device pixels.
+ *
+ * Measured, not guessed — see `test-infra/probe-canvas-limits.mjs`:
+ *   2560 × 60_000 → OK   (153.6M px, 586 MB)
+ *   2560 × 70_000 → FAIL (179.2M px, 684 MB)
+ *   1920 × 80_000 → FAIL (153.6M px — same area as the OK case!)
+ *   1280 × 100_000 → FAIL
+ * The binding constraint is the **dimension**, not the area.
+ */
+export const MAX_CANVAS_DIMENSION_PX = 65_535;
+
+/**
+ * The tallest page (in CSS px) that can be stitched at the given device
+ * scale.
+ *
+ * Two independent ceilings:
+ *   1. HARD_PAGE_LIMIT_PX — the architecture's own cap (50_000 CSS px).
+ *   2. MAX_CANVAS_DIMENSION_PX / scale — Chrome's canvas dimension cap.
+ *
+ * At DPR=1 the architecture cap still binds (50_000 CSS px). At DPR=2 the
+ * canvas cap binds first (32_767 CSS px) — which still covers the
+ * 30_000px Notion-style page the PoC-D3 S2 scenario targets.
+ */
+export function maxAllowedCssHeight(scale: number): number {
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return Math.min(HARD_PAGE_LIMIT_PX, Math.floor(MAX_CANVAS_DIMENSION_PX / s));
+}
+
+/**
+ * Would the stitch canvas exceed Chrome's dimension limit at this scale?
+ *
+ * `scale` is device pixels per CSS pixel. The height is what actually
+ * breaks Chrome (see MAX_CANVAS_DIMENSION_PX), but the width is checked
+ * too — a 4K-wide window at DPR=2 would be 7_680 device px, which is
+ * fine, while the height is the real risk.
+ */
+export function exceedsCanvasLimit(
+  cssWidth: number,
+  cssHeight: number,
+  cssScale: number,
+): boolean {
+  const s = Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1;
+  return (
+    Math.ceil(cssWidth * s) > MAX_CANVAS_DIMENSION_PX ||
+    Math.ceil(cssHeight * s) > MAX_CANVAS_DIMENSION_PX
+  );
+}
+
+/**
+ * How many device pixels does one CSS pixel occupy in the captured bitmap?
+ *
+ * ⚠️ This is the single most error-prone number in the whole pipeline, and
+ * getting it wrong is *silent*: the stitcher scales the bitmap into the
+ * canvas, so a wrong scale produces a stretched image with no error
+ * anywhere. Two failure modes we have actually hit:
+ *
+ * 1. **Deriving it from the bitmap's size.** Tempting
+ *    (`bitmap.width / window.innerWidth`), but `captureVisibleTab` grabs
+ *    the browser **widget**, which can be LARGER than the page's layout
+ *    viewport — e.g. a 1282×839 widget rasterising a 1280×800 layout
+ *    viewport. The ratio then reads 2.003 instead of 2, and the image
+ *    comes out stretched by 0.16% horizontally and 4.9% vertically.
+ *    Measured: `test-infra/probe-marker-mapping.mjs` draws 1px markers at
+ *    known page positions and reads back where they landed in the bitmap.
+ *
+ * 2. **Blindly trusting `window.devicePixelRatio`.** It is right in a real
+ *    browser (Chrome sets DPR = zoom × screen scale, and the raster uses
+ *    the same factor), but it can be *higher* than the raster that
+ *    actually comes back — e.g. Playwright's CDP `deviceScaleFactor`
+ *    emulation, which makes the page believe it is on a 2× screen while
+ *    the window widget still rasters at 1×. Trusting DPR there would
+ *    upscale a 1× bitmap into a 2× canvas (soft, blurry, double the
+ *    memory for no detail).
+ *
+ * So: **trust the page's DPR, but only when the bitmap is at least that
+ * sharp.** If the bitmap is materially coarser than DPR claims, fall back
+ * to the bitmap's own ratio. A 5% tolerance absorbs the widget overhang
+ * (which makes the bitmap *bigger*, never smaller).
+ *
+ * @param cssWidth   the page's layout viewport width (CSS px)
+ * @param cssHeight  the page's layout viewport height (CSS px)
+ * @param bitmapWidth  the captured bitmap's width (device px)
+ * @param bitmapHeight the captured bitmap's height (device px)
+ * @param devicePixelRatio the page's `window.devicePixelRatio`
+ */
+export function resolveDeviceScale(
+  cssWidth: number,
+  cssHeight: number,
+  bitmapWidth: number,
+  bitmapHeight: number,
+  devicePixelRatio: number,
+): { scale: number; source: 'dpr' | 'bitmap' } {
+  const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+
+  // How many device px does the layout viewport need at this DPR?
+  const expectedW = cssWidth * dpr;
+  const expectedH = cssHeight * dpr;
+
+  // The bitmap must be able to hold the whole layout viewport at DPR
+  // resolution. If it cannot, the raster is coarser than the page
+  // believes → use the raster's own ratio instead of upscaling.
+  const rasterCovers =
+    bitmapWidth >= expectedW * 0.95 && bitmapHeight >= expectedH * 0.95;
+
+  if (rasterCovers) return { scale: dpr, source: 'dpr' };
+
+  // Fall back to the bitmap. Use whichever axis is more reliable: the
+  // widget overhang inflates the ratio, so take the SMALLER of the two
+  // ratios (the tighter fit is the honest one).
+  const byWidth = cssWidth > 0 ? bitmapWidth / cssWidth : 0;
+  const byHeight = cssHeight > 0 ? bitmapHeight / cssHeight : 0;
+  const candidates = [byWidth, byHeight].filter((v) => Number.isFinite(v) && v > 0);
+  if (candidates.length === 0) return { scale: dpr, source: 'dpr' };
+
+  return { scale: Math.min(...candidates), source: 'bitmap' };
+}
+
 // ─── Fixed/Sticky element handling (architecture §3.4) ────────────────────────
 
 interface HiddenElement {

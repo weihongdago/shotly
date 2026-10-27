@@ -30,9 +30,12 @@ import {
 import {
   isPageTooLong,
   planCapture,
+  resolveDeviceScale,
   runScrollAndCapture,
   PER_SEGMENT_BUFFER_MS,
   waitForNetworkIdle,
+  maxAllowedCssHeight,
+  MAX_CANVAS_DIMENSION_PX,
   type ScreenshotChunk,
 } from '../utils/screenshot-engine';
 import { requestOverPort, sleep, cryptoRandomId } from '../utils/messaging';
@@ -144,13 +147,27 @@ async function handleStartCapture(
   }
 
   const plan = planCapture();
-  if (isPageTooLong(plan)) {
+  // The stitch canvas is sized in **device** pixels, and Chrome refuses
+  // canvases taller than 65_535px. A page that is fine at DPR=1 can blow
+  // that budget at DPR=2, so the limit has to be checked against the
+  // device scale, not just the CSS height.
+  const dpr = plan.devicePixelRatio || 1;
+  const maxCssHeight = maxAllowedCssHeight(dpr);
+  if (plan.totalHeight > maxCssHeight) {
     port.postMessage({
       v: PROTOCOL_VERSION,
       id: env.id,
       scope: 'content',
       type: 'screenshot:too-long',
-      payload: { totalHeight: plan.totalHeight, limit: 50_000 },
+      payload: {
+        totalHeight: plan.totalHeight,
+        limit: maxCssHeight,
+        devicePixelRatio: dpr,
+        reason:
+          dpr > 1
+            ? `page is ${plan.totalHeight}px tall; at ${dpr}× DPR the stitch canvas would exceed Chrome's ${MAX_CANVAS_DIMENSION_PX}px limit (max ${maxCssHeight}px)`
+            : `page is ${plan.totalHeight}px tall; the limit is ${maxCssHeight}px`,
+      },
     } satisfies Envelope);
     return;
   }
@@ -160,6 +177,9 @@ async function handleStartCapture(
   const initPayload: InitStitchPayload = {
     viewportWidth: plan.viewportWidth,
     totalHeight: plan.totalHeight,
+    pageViewportWidth: plan.viewportWidth,
+    pageViewportHeight: plan.viewportHeight,
+    pageDevicePixelRatio: dpr,
   };
   await requestOverPort<InitStitchPayload, InitStitchPayload>(
     port,
@@ -195,12 +215,25 @@ async function handleStartCapture(
         throw new Error(`capture chunk ${chunk.index} returned empty payload`);
       }
       // The captured bitmap is in DEVICE pixels; the stitcher works in CSS
-      // pixels. Derive the scale from the bitmap's real size instead of
-      // trusting window.devicePixelRatio (browser zoom breaks that).
-      const scale = {
-        x: plan.viewportWidth > 0 ? capturePayload.width / plan.viewportWidth : 1,
-        y: plan.viewportHeight > 0 ? capturePayload.height / plan.viewportHeight : 1,
-      };
+      // pixels. The scale is the number of device pixels per CSS pixel.
+      //
+      // ⚠️ It must NOT be derived naively from the bitmap's size:
+      // `captureVisibleTab` grabs the browser *widget*, which can be
+      // larger than the page's layout viewport (measured: a 1282×839
+      // widget rasterising a 1280×800 layout viewport), which would read
+      // as 2.003× instead of 2× and stretch the image.
+      //
+      // `resolveDeviceScale` trusts the page's devicePixelRatio but falls
+      // back to the bitmap when the raster is coarser than the page
+      // believes (Playwright's CDP deviceScaleFactor does exactly that).
+      const scaleInfo = resolveDeviceScale(
+        plan.viewportWidth,
+        plan.viewportHeight,
+        capturePayload.width,
+        capturePayload.height,
+        plan.devicePixelRatio,
+      );
+      const scale = scaleInfo.scale;
       // The viewport we captured may show MORE than this slice needs (the
       // last slice of a page is usually shorter than a viewport, and the
       // browser clamps the final scroll position). Crop the bitmap down to
@@ -220,11 +253,21 @@ async function handleStartCapture(
         segmentHeight: cropHeightCss,
         viewportWidth: plan.viewportWidth,
         offsetY: cropTop,
+        // The stitcher must use the very same scale the crop was computed
+        // with — otherwise the image is silently stretched.
+        deviceScaleRatio: scale,
         crop: {
+          // The widget raster can be wider/taller than the layout
+          // viewport (extra widget area on the right/bottom). The page
+          // content starts at the raster's top-left corner, so the crop
+          // takes exactly the layout viewport's width in device pixels.
           sx: 0,
-          sy: Math.round((cropTop - viewportTop) * scale.y),
-          sw: capturePayload.width,
-          sh: Math.max(1, Math.round(cropHeightCss * scale.y)),
+          sy: Math.round((cropTop - viewportTop) * scale),
+          sw: Math.min(
+            Math.round(plan.viewportWidth * scale),
+            capturePayload.width,
+          ),
+          sh: Math.max(1, Math.round(cropHeightCss * scale)),
         },
       };
       await requestOverPort<StitchChunkPayload, { index: number }>(
@@ -389,15 +432,22 @@ async function captureRegion(
   }
 
   const plan = planCapture();
+  const dpr = plan.devicePixelRatio || 1;
   const slices = segmentsCoveringRegion(region, plan);
   if (slices.length === 0) {
     throw new Error('selected region does not intersect the page');
   }
 
   // Size the offscreen canvas to the *region*, not to the page.
+  // `pageViewportWidth/Height` stay the PAGE viewport — the bitmaps are
+  // full viewports, and the stitcher needs them to interpret the bitmap's
+  // pixel geometry.
   await requestOverPort<InitStitchPayload, InitStitchPayload>(port, CAPTURE_MSG.INIT_STITCH, {
     viewportWidth: region.width,
     totalHeight: region.height,
+    pageViewportWidth: plan.viewportWidth,
+    pageViewportHeight: plan.viewportHeight,
+    pageDevicePixelRatio: dpr,
   });
 
   const previousScrollY = window.scrollY;
@@ -430,13 +480,19 @@ async function captureRegion(
         throw new Error(`region capture ${slice.index} returned empty payload`);
       }
 
-      // The captured PNG is in device pixels — derive the scale from the
-      // actual bitmap size instead of trusting window.devicePixelRatio
-      // (browser zoom would break the assumption).
-      const scale = {
-        x: plan.viewportWidth > 0 ? captured.width / plan.viewportWidth : 1,
-        y: plan.viewportHeight > 0 ? captured.height / plan.viewportHeight : 1,
-      };
+      // The captured PNG is in device pixels. The scale must come from
+      // `resolveDeviceScale` (the page's devicePixelRatio, with a
+      // bitmap-based fallback) — deriving it from the bitmap's size alone
+      // over-reads whenever the browser widget is larger than the page's
+      // layout viewport, which stretches the region crop.
+      const scaleInfo = resolveDeviceScale(
+        plan.viewportWidth,
+        plan.viewportHeight,
+        captured.width,
+        captured.height,
+        plan.devicePixelRatio,
+      );
+      const scale = { x: scaleInfo.scale, y: scaleInfo.scale };
       const crop = computeRegionCrop(
         region,
         { x: window.scrollX, y: scrollY },
@@ -451,6 +507,7 @@ async function captureRegion(
         segmentHeight: crop.cssHeight,
         viewportWidth: region.width,
         offsetY: crop.offsetY,
+        deviceScaleRatio: scaleInfo.scale,
         crop: { sx: crop.sx, sy: crop.sy, sw: crop.sw, sh: crop.sh },
       };
       await requestOverPort<StitchChunkPayload, { index: number }>(

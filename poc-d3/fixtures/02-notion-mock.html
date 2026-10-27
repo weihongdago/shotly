@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shotly PoC S2 — Long Notion-style workspace</title>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #37352f; background: #fff; }
+
+  /* A sticky top bar: the capture must hide it, otherwise it is painted
+     once per viewport slice and the stitched image shows N copies. */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 14px;
+    height: 45px; padding: 0 16px;
+    background: #ffffff; border-bottom: 1px solid #e9e9e7;
+    font-size: 13px; color: #787774;
+  }
+  .topbar .mark { font-weight: 800; color: #37352f; letter-spacing: -0.01em; }
+  .crumb { padding: 3px 8px; border-radius: 4px; background: #f1f1ef; }
+
+  .page { display: flex; align-items: flex-start; }
+  .sidebar {
+    position: sticky; top: 45px; z-index: 40;
+    flex: 0 0 240px; padding: 18px 14px; min-height: 400px;
+    border-right: 1px solid #ededeb; background: #fbfbfa;
+  }
+  .sidebar a { display: block; padding: 5px 8px; border-radius: 4px; font-size: 13px; color: #787774; text-decoration: none; }
+  .sidebar a.active { background: #ededeb; color: #37352f; font-weight: 600; }
+
+  .content { flex: 1 1 auto; max-width: 760px; padding: 40px 46px 0; }
+  h1 { font-size: 36px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.02em; }
+  h2 { font-size: 24px; margin: 44px 0 10px; letter-spacing: -0.01em; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p { font-size: 16px; line-height: 1.65; margin: 0 0 14px; }
+  .lede { color: #787774; font-size: 17px; margin-bottom: 34px; }
+  .callout { display: flex; gap: 12px; padding: 16px; margin: 22px 0; border-radius: 4px; background: #f1f1ef; font-size: 15px; line-height: 1.6; }
+  .callout .icon { font-size: 20px; }
+  pre { background: #f7f6f3; border: 1px solid #e9e9e7; border-radius: 4px; padding: 14px 16px; overflow: hidden; font-size: 13.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .fig { margin: 26px 0; }
+  .fig .canvas { height: 260px; border-radius: 6px; border: 1px solid #e9e9e7; }
+  .fig figcaption { font-size: 13px; color: #787774; margin-top: 8px; text-align: center; }
+  ul, ol { font-size: 16px; line-height: 1.7; padding-left: 24px; margin: 0 0 14px; }
+  li { margin-bottom: 4px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; background: #e7f3f8; color: #0b6e99; font-size: 13px; font-weight: 500; }
+  .tag.amber { background: #fbecdd; color: #9d5a0a; }
+  .tag.green { background: #e6f4ea; color: #1a7f37; }
+  .divider { height: 1px; background: #e9e9e7; margin: 34px 0; }
+  .filler {
+    margin: 0;
+    /* ⚠️ The tail spacer must NOT be a blank white block.
+     *
+     * The S2 assertion is "no horizontal band of the stitched PNG is
+     * empty". If the last few hundred CSS pixels of the page were pure
+     * white, the assertion would be testing the FIXTURE, not the
+     * product — and a real stitching bug that dropped the final slices
+     * would look exactly the same as the intentional spacer.
+     *
+     * So the spacer carries faint ruled lines: every band of the capture
+     * has ink, and an empty band can only mean "this slice never made it
+     * into the canvas". (The lines are 1 CSS px, i.e. 2 device px at
+     * DPR=2 — ~4% ink per band, well above the 0.5% threshold.)
+     */
+    background: repeating-linear-gradient(
+      to bottom,
+      #e9e9e7 0 1px,
+      transparent 1px 24px
+    );
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="mark">◆ Workspace</span>
+  <span class="crumb">Engineering</span>
+  <span class="crumb">Q4 Planning</span>
+  <span class="crumb">Capture pipeline notes</span>
+</div>
+
+<div class="page">
+  <aside class="sidebar">
+    <a href="#" class="active">Capture pipeline notes</a>
+    <a href="#">Overview</a>
+    <a href="#">Scroll & stitch</a>
+    <a href="#">Offscreen canvas</a>
+    <a href="#">Segment budget</a>
+    <a href="#">Error handling</a>
+    <a href="#">Open questions</a>
+    <a href="#">Appendix</a>
+  </aside>
+
+  <main class="content">
+    <h1>Capture pipeline notes</h1>
+    <p class="lede">Working notes on how a browser extension stitches a page that is taller than the screen — and what breaks along the way.</p>
+
+    <div class="callout">
+      <span class="icon">💡</span>
+      <span>This fixture is deliberately tall. The whole point is to force the capture into many viewport slices, so any seam or scroll-position bug shows up instead of hiding behind a short page.</span>
+    </div>
+
+    <h2>Why slicing is unavoidable</h2>
+    <p>A browser cannot hand you an image of a page that does not fit on your screen. There is no API for it. The <code>Page.captureScreenshot</code> endpoint you may have read about in the DevTools Protocol only works for the viewport, and the deprecated <code>captureVisibleTab</code> extension API behaves the same way.</p>
+    <p>So tools do what you would do if you had to photocopy a newspaper column by column: scroll to a position, take a picture of what is on screen, scroll a little further, take another picture, and then paste the pictures together.</p>
+
+    <h3>The three things that go wrong</h3>
+    <ol>
+      <li><b>Off-by-one scroll.</b> The browser clamps the last scroll position. If the tool assumes its requested scroll offset was honoured, the final slice overlaps the previous one and the stitched image has a doubled band.</li>
+      <li><b>Fixed elements.</b> A sticky header is painted into every slice. Stitch them naively and the header appears dozens of times down the page.</li>
+      <li><b>Late-loading content.</b> Images below the fold have not started downloading. Slice them before they paint and you get empty rectangles.</li>
+    </ol>
+
+    <div class="divider"></div>
+
+    <h2>Segment arithmetic</h2>
+    <p>Each slice covers exactly one viewport. The number of slices is therefore <code>ceil(pageHeight / viewportHeight)</code> — for a 30&nbsp;000&nbsp;px page in an 800&nbsp;px viewport that is 38 slices, and every one of them costs a scroll, a settle delay, and a round trip to the extension service worker.</p>
+    <p>That per-slice cost is the dominant term in total capture time, and it is the number that decides whether a capture feels instant or feels broken.</p>
+
+    <figure class="fig">
+      <div class="canvas" style="background: linear-gradient(135deg, #2DD4BF, #0D9488)"></div>
+      <figcaption>Figure 1 — slices are cut by viewport, not by a fixed segment size.</figcaption>
+    </figure>
+
+    <h2>Stitching on a canvas</h2>
+    <p>Service workers have no DOM, so the final composition happens in an offscreen document that owns an <code>OffscreenCanvas</code>. Each slice arrives as a data URL, gets decoded into an <code>ImageBitmap</code>, and is drawn at its page-absolute Y offset.</p>
+    <p>The crop rectangle is the part that is easy to get wrong. The captured bitmap is in device pixels; the canvas works in CSS pixels. When the device pixel ratio is 2, a crop that forgets to scale silently produces an image that is half the size it should be — or an image where the bottom half of every slice is missing.</p>
+
+    <pre><code>const scale = bitmap.width / viewportWidth;
+const sy = Math.round((cropTop - viewportTop) * scale);
+const sh = Math.round(cropHeightCss * scale);
+ctx.drawImage(bitmap, 0, sy, bitmap.width, sh, 0, cropTop, viewportWidth, cropHeightCss);</code></pre>
+
+    <h3>On the failure that never surfaces</h3>
+    <p>If any coordinate in that call is <code>NaN</code>, <code>drawImage</code> does not throw. It simply draws nothing. The result is a full-size, entirely blank PNG — and a blank PNG still has a plausible file size, so a test that only asserts "the file is bigger than 5&nbsp;KB" passes happily.</p>
+    <p>That is why the regression suite has to look at pixels, not at byte counts. <span class="tag">test</span> <span class="tag amber">pixel-check</span></p>
+
+    <h2>Error handling</h2>
+    <p>A capture can fail for reasons that have nothing to do with stitching: the tab was closed, the page navigated, the service worker was evicted mid-run, or the page is simply taller than the memory budget allows.</p>
+    <p>The last one deserves special treatment. A page past roughly 50&nbsp;000&nbsp;CSS pixels needs a canvas that no longer fits comfortably in an offscreen document, and the browser will kill it rather than tell you why. Refusing early with a clear message is strictly better than failing halfway through with a blank canvas.</p>
+
+    <div class="callout">
+      <span class="icon">⚠️</span>
+      <span>Active refusal beats silent failure. A user who is told "this page is too long, try region capture" can act on it. A user who is handed a 12&nbsp;MB blank PNG cannot.</span>
+    </div>
+
+    <h2>Open questions</h2>
+    <ul>
+      <li>Should the segment budget adapt to the observed capture rate, or stay fixed?</li>
+      <li>Does hiding a sticky element change the page height enough to shift the plan?</li>
+      <li>How should the progress bar report "segment 38 of 38" without frightening anyone?</li>
+    </ul>
+
+    <p>More filler below, so the page keeps going for a good while.</p>
+    <div id="bulk"></div>
+    <div class="filler" id="filler"></div>
+  </main>
+</div>
+
+<script>
+  // ⚠️ Why the page is filled with real content instead of one big spacer:
+  //
+  // The S2 assertion is "no horizontal band of the stitched PNG is empty".
+  // That check only has teeth if every part of the page actually has
+  // content. With a single 27_000px white spacer, the bottom two thirds
+  // of the capture are legitimately blank — and then the assertion is
+  // testing the fixture, not the product. Worse: a *real* stitching bug
+  // that dropped the last slices would look exactly the same.
+  //
+  // So the page repeats real blocks (heading, paragraph, callout, figure)
+  // all the way down. Now an empty band can only mean "this slice never
+  // made it into the canvas".
+  //
+  // The tail spacer still exists so the page lands on EXACTLY the target
+  // height — a fixed spacer would drift whenever the copy changes, and
+  // the scenario asserts a specific height.
+  (function () {
+    const TARGET = 30000;
+    const bulk = document.getElementById('bulk');
+    const filler = document.getElementById('filler');
+
+    const SECTION = [
+      ['h2', 'Segment ' + '%N%'],
+      ['p', 'The capture scrolls to a position, waits for the page to settle, and grabs whatever is on screen. Every one of those steps can go wrong in a way that looks like success until you look at the pixels.'],
+      ['callout', '💡', 'A slice that scrolls to the wrong place is worse than a slice that is missing. Missing leaves a hole you can see; wrong leaves a duplicated band that most reviewers will not notice.'],
+      ['fig', 'Figure %N% — a slice of the page, captured and stitched back together.'],
+    ];
+
+    function buildBlock(i) {
+      const frag = document.createDocumentFragment();
+      for (const spec of SECTION) {
+        if (spec[0] === 'h2') {
+          const h = document.createElement('h2');
+          h.textContent = spec[1].replace('%N%', String(i + 1));
+          frag.appendChild(h);
+        } else if (spec[0] === 'p') {
+          const p = document.createElement('p');
+          p.textContent = spec[1];
+          frag.appendChild(p);
+        } else if (spec[0] === 'callout') {
+          const div = document.createElement('div');
+          div.className = 'callout';
+          const icon = document.createElement('span');
+          icon.className = 'icon';
+          icon.textContent = spec[1];
+          const text = document.createElement('span');
+          text.textContent = spec[2];
+          div.append(icon, text);
+          frag.appendChild(div);
+        } else if (spec[0] === 'fig') {
+          const fig = document.createElement('figure');
+          fig.className = 'fig';
+          const canvas = document.createElement('div');
+          canvas.className = 'canvas';
+          // A gradient that shifts per section, so a wrong slice is
+          // visible as a wrong colour — not just as a seam.
+          const hue = (i * 23) % 360;
+          canvas.style.background = 'linear-gradient(135deg, hsl(' + hue + ', 62%, 58%), hsl(' + ((hue + 40) % 360) + ', 62%, 42%))';
+          const cap = document.createElement('figcaption');
+          cap.textContent = spec[1].replace('%N%', String(i + 1));
+          fig.append(canvas, cap);
+          frag.appendChild(fig);
+        }
+      }
+      return frag;
+    }
+
+    function fill() {
+      // Fill the page with sections until the target height is reached.
+      let guard = 0;
+      while (document.documentElement.scrollHeight < TARGET - 900 && guard < 400) {
+        bulk.appendChild(buildBlock(guard));
+        guard += 1;
+      }
+      // Land on exactly the target height.
+      const current = document.documentElement.scrollHeight;
+      filler.style.height = Math.max(0, TARGET - current) + 'px';
+    }
+
+    fill();
+    window.addEventListener('load', fill);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fill);
+  })();
+</script>
+
+</body>
+</html>
