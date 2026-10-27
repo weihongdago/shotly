@@ -139,14 +139,15 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 
 ## 8. 提审前检查清单
 
-- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（191/191）
+- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（196/196）
 - [x] `pnpm zip` 产出包已验证（`.output/shotly-0.1.0-chrome.zip`，230 KB，含 `_locales/`）—— 上传时用这个
 - [x] manifest 权限与第 6 节完全一致（不多不少，有测试锁住）
 - [x] manifest 有 `default_locale: 'en'` + `_locales/en` `_locales/zh_CN` 齐备
 - [x] 隐私政策 URL 可公开访问（https://weihongdago.github.io/shotly/privacy.html）
 - [x] 4 张功能截图补齐（1280×800，真实浏览器产出）
 - [x] 2 份 listing 文本补齐（English + 中文（简体）→ 见第 9 节）
-- [x] listing ↔ 实现 一致性守卫（`test-infra/e2e/playwright-listing-consistency.spec.ts`，4 用例）
+- [x] listing ↔ 实现 一致性守卫（vitest 版在 CI 每次 push 都跑，5 用例；另有 Playwright 版 4 用例）
+- [x] 隐私承诺运行时断言（`test-infra/e2e/playwright-privacy-no-network.spec.ts`，2 用例）——「不上传不追踪」是被测的，不是被声称的
 - [ ] 开发者账号 $5 注册费到账
 - [x] 版本号 = 0.1.0，商店描述写「Free & open source」
 
