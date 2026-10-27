@@ -55,6 +55,8 @@ Free and open source. Chrome MV3.
 | 小宣传图 | 440×280 PNG | `promo-small-440x280.png` | ✅ |
 | 大宣传图 | 1280×800 PNG | `promo-large-1280x800.png` | ✅ |
 | 隐私政策 | 公开可访问 URL | https://weihongdago.github.io/shotly/privacy.html | ✅ 已上线（HTTP 200）；域名 `getshotly.com` 到手后可换自有域名 |
+| **支持页面** | 公开可访问 URL | https://weihongdago.github.io/shotly/support.html | ✅ 已上线（HTTP 200）—— **CWS 后台必填项**，之前漏了 |
+| **主页** | 公开可访问 URL | https://weihongdago.github.io/shotly/ | ✅ 已上线（HTTP 200）—— 后台「Homepage URL」填这个 |
 | 功能截图 | 1280×800 PNG ×4 | `screenshots/01~04` | ✅ 真实浏览器运行产物（2026-10-27 重拍，popup 为英文，与 listing 一致） |
 | 分类 | — | `Productivity` | ✅ |
 | 语言 | — | English (Primary), 中文（简体） | ✅ v1.0 只交这 2 份 listing 文本（界面只有 en/zh，虚假声明 4 语种反而有审核风险） |
@@ -146,6 +148,8 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 - [x] manifest 权限与第 6 节完全一致（不多不少，有测试锁住）
 - [x] manifest 有 `default_locale: 'en'` + `_locales/en` `_locales/zh_CN` 齐备
 - [x] 隐私政策 URL 可公开访问（https://weihongdago.github.io/shotly/privacy.html）
+- [x] **支持 URL 可公开访问**（https://weihongdago.github.io/shotly/support.html）—— CWS 后台必填项
+- [x] 主页 URL 可公开访问（https://weihongdago.github.io/shotly/）
 - [x] 4 张功能截图补齐（1280×800，真实浏览器产出）
 - [x] 2 份 listing 文本补齐（English + 中文（简体）→ 见第 9 节）
 - [x] listing ↔ 实现 一致性守卫（vitest 版在 CI 每次 push 都跑，5 用例；另有 Playwright 版 4 用例）
@@ -242,5 +246,7 @@ Alt+Shift+S —— 截取整页
 | 审核被拒：权限过大 | `host_permissions: <all_urls>` 对截图类扩展是标准做法，理由充分；准备好第 6 节的说明 |
 | 审核被拒：隐私政策不匹配 | 政策里明确写了「不收集」，与实际行为一致；提审前自查 manifest 无任何网络请求 |
 | 域名未注册 → 隐私政策 URL 挂空 | **已解**：GitHub Pages 已上线（HTTP 200）。域名到手后可换自有域名 |
+| 支持 URL 缺失被退审 | **已解**：新增 support.html（GitHub Issues 渠道 + 常见问题 + 报 bug 模板）。CWS 后台「Support URL」是**必填**的 |
+| 隐私政策里的联系邮箱是死地址 | **已修**：原写 `privacy@getshotly.com`，但域名未注册（whois: No match）——审核员点进去发现邮箱不可用会退审。改为 GitHub Issues（仓库公开且开了 Issues，链接当场可验证） |
 | listing 吹了没有的功能 | **已修**：D+4 发现 listing 吹了 `Alt+Shift+V` 视口截图（实际给的是整页），已移除该命令；并加了一致性测试锁住快捷键/权限/功能三类漂移 |
 | 商店名超限 | **已修**：原名 47 字符 > 45 上限 → `Shotly — Full Page & Region Capture`（35） |

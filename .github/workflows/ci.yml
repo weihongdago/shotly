@@ -50,7 +50,14 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Build (firefox-mv2)
+      # ⚠️ 这只是**编译检查**，不是受支持的平台。
+      #    捕获链路依赖 `chrome.offscreen`（OffscreenCanvas 拼接），
+      #    Firefox 没实现这个 API（MDN browser-compat-data 里没有 offscreen 条目），
+      #    所以 firefox 产物运行时是坏的：chrome.offscreen 是 undefined，
+      #    ensureOffscreen() 抛错，每次截图都失败。
+      #    保留它是为了捕捉共享代码里误用 Chrome-only API 的情况。
+      #    见 README 顶部 ⚠️ 和 progress.md 决策 #1（平台范围 = Chrome only）。
+      - name: Build (firefox-mv2) — compile check only
         run: pnpm build:firefox
 
       # 提交给 CWS 的是 zip，不是 .output/chrome-mv3/。打包步骤本身是个

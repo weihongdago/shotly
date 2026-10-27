@@ -2,6 +2,17 @@
 
 > Modern whole-page screenshot tool for Chrome. Privacy-first: your screenshots never leave your device.
 
+> ⚠️ **Chrome / Chromium only.** The capture pipeline depends on
+> `chrome.offscreen` (OffscreenCanvas stitching), which **Firefox does not
+> implement** — MDN's browser-compat-data has no `offscreen` entry at all.
+> `pnpm build:firefox` compiles and produces a zip, but that build is
+> **broken at runtime**: `chrome.offscreen` is `undefined` there, so
+> `ensureOffscreen()` throws and every capture fails.
+>
+> The Firefox build is kept in CI as a **compile check only** (it catches
+> accidental Chrome-only API usage in shared code), not as a supported
+> platform. See progress.md 决策 #1: 平台范围 = Chrome only.
+
 ## Status
 
 **D+4 — 2026-10-27**: v1.0 feature set is feature-complete and verified in a real browser.
@@ -67,7 +78,7 @@ pnpm dev              # WXT dev server with HMR (loads in .output/chrome-mv3)
 pnpm typecheck        # vue-tsc --noEmit
 pnpm test             # vitest run
 pnpm build            # production build → .output/chrome-mv3
-pnpm build:firefox    # firefox-mv2 build
+pnpm build:firefox    # firefox-mv2 COMPILE CHECK ONLY — see the ⚠️ note at the top
 pnpm zip              # package for CWS upload
 ```
 

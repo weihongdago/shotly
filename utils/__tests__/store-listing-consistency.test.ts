@@ -156,4 +156,18 @@ describe('商店 listing ↔ 实现 一致性', () => {
       expect(mentioned, `manifest 有权限 "${p}"，listing 里没有给出理由`).toContain(p);
     }
   });
+
+  test('listing 不声称未实现的平台支持（Firefox / Edge / Safari）', () => {
+    // 捕获链路依赖 `chrome.offscreen` —— Firefox 没实现这个 API，
+    // 所以 firefox 产物运行时是坏的（见 README 顶部 ⚠️）。
+    // 如果哪天真的支持了 Firefox，记得先改这条断言再改文案。
+    const copy = readSubmittedCopy();
+    const unsupported = ['firefox', 'edge', 'safari'].filter((b) =>
+      new RegExp(`\\b${b}\\b`, 'i').test(copy),
+    );
+    expect(
+      unsupported,
+      `listing 声称支持 ${unsupported.join(' / ')}，但这些浏览器上扩展跑不起来`,
+    ).toEqual([]);
+  });
 });
