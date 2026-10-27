@@ -117,6 +117,7 @@ const index = page({
 
 <div class="cta">
   <a class="btn primary" href="${REPO}">View source on GitHub</a>
+  <a class="btn" href="./support.html">Support</a>
   <a class="btn" href="./privacy.html">Privacy policy</a>
 </div>
 
@@ -167,7 +168,7 @@ pnpm zip        # → .output/shotly-${VERSION}-chrome.zip</code></pre>
 </table>
 
 <footer>
-  <p>Source: <a href="${REPO}">${REPO}</a> · <a href="./privacy.html">Privacy policy</a> · v${VERSION}</p>
+  <p>Source: <a href="${REPO}">${REPO}</a> · <a href="./support.html">Support</a> · <a href="./privacy.html">Privacy policy</a> · v${VERSION}</p>
 </footer>`,
 });
 writeFileSync(resolve(outDir, 'index.html'), index);
@@ -184,7 +185,76 @@ writeFileSync(
   }),
 );
 
+// ─── support.html ────────────────────────────────────────────────────────────
+//
+// CWS 的「Support URL」是**必填项**。之前站点只有 index + privacy，
+// 提审时这一栏没东西可填。
+//
+// 联系渠道选 GitHub Issues（不是邮箱）：域名 getshotly.com 还没注册，
+// 写上去的邮箱是死地址 —— 审核员点进去发现邮箱不能用会直接退审。
+// GitHub 仓库是公开的且开了 Issues，链接当场可验证。
+const support = page({
+  title: 'Shotly — Support',
+  description: 'Get help with Shotly, report a bug, or ask a question.',
+  body: `<p class="eyebrow">Shotly</p>
+<h1>Support</h1>
+<p class="lede">遇到问题、想报 bug、或者有疑问 —— 都在 GitHub Issues 里提。</p>
+
+<div class="cta">
+  <a class="btn primary" href="${REPO}/issues">Open an issue on GitHub</a>
+  <a class="btn" href="${REPO}">Source code</a>
+</div>
+
+<h2>提 issue 之前</h2>
+<p>先看一眼 <a href="${REPO}/issues">已有的 issue</a> —— 很多问题已经被提过并解决了。
+搜一下关键词可能更快。</p>
+
+<h2>报 bug 请附上这些</h2>
+<ul>
+  <li>你的 Chrome 版本（<code>chrome://version</code> 里能看到）</li>
+  <li>Shotly 版本（扩展详情页左上角）</li>
+  <li>出问题的网址</li>
+  <li>截图 —— 如果是页面显示不对，直接把出问题的画面截下来</li>
+  <li>复现步骤：做了什么操作、期望看到什么、实际看到什么</li>
+</ul>
+
+<h2>常见问题</h2>
+
+<h3>整页截图在某些网站上不完整</h3>
+<p>先看是不是页面太长了。Shotly 的上限是 <code>min(50 000, ⌊65 535 / DPR⌋)</code> CSS 像素
+（页面上会有提示）。另一个常见原因是页面上有 <code>position: fixed</code> 的悬浮元素
+（吸顶导航、悬浮按钮），它们在拼接时会重复出现 —— 这是已知限制。</p>
+
+<h3>区域截图选不了某些区域</h3>
+<p>最小 100×100 像素。另外如果选区框在 iframe 内部，浏览器不允许跨 iframe 操作，
+这是浏览器的限制。</p>
+
+<h3>截图没出现在历史列表里</h3>
+<p>历史库最多存 50 条，超出自动淘汰最旧的。如果刚截图完就找不见，
+先看看是不是之前已经存了 50 条。</p>
+
+<h3>PDF 导出打不开</h3>
+<p>请把问题连同导出的 PDF 一起作为 issue 附件上传。</p>
+
+<h3>怎么确认它真的不上传截图</h3>
+<p>Chrome 开发者工具 → Network 面板，跑一次截图，看有没有任何第三方请求。
+Shotly 的测试套件里就有一条 E2E 专门做这件事（跑完整截图流程并拦截所有请求）。
+源码在 <a href="${REPO}">${REPO}</a>。</p>
+
+<h2>其他</h2>
+<ul>
+  <li>隐私相关：见 <a href="./privacy.html">隐私政策</a></li>
+  <li>功能请求：直接开 issue，标上 <code>feature request</code></li>
+</ul>
+
+<footer>
+  <p>Source: <a href="${REPO}">${REPO}</a> · <a href="./privacy.html">Privacy policy</a> · <a href="./support.html">Support</a> · v${VERSION}</p>
+</footer>`,
+});
+writeFileSync(resolve(outDir, 'support.html'), support);
+
 console.log(`pages written to ${outDir}`);
 console.log('  index.html');
 console.log('  privacy.html');
+console.log('  support.html');
 console.log('  styles.css');

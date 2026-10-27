@@ -50,7 +50,7 @@ Shotly 没有账号体系，没有埋点 SDK，没有分析服务，没有广告
 Shotly 不收集任何个人信息，因此不涉及儿童数据。
 
 ### 7. 联系方式
-问题或顾虑：`privacy@getshotly.com`
+问题或顾虑：请在 [GitHub 提 issue](https://github.com/weihongdago/shotly/issues)（也见 [支持页面](https://weihongdago.github.io/shotly/support.html)）
 
 ---
 
@@ -98,4 +98,4 @@ The only future exception is the Chrome Web Store upgrade flow planned for v1.1,
 Shotly collects no personal information, so children's data is never involved.
 
 ### 7. Contact
-Questions or concerns: `privacy@getshotly.com`
+Questions or concerns: [open an issue on GitHub](https://github.com/weihongdago/shotly/issues) (see also the [support page](https://weihongdago.github.io/shotly/support.html))
