@@ -9,6 +9,12 @@ export default defineConfig({
     name: 'Shotly',
     description:
       'Modern whole-page screenshot tool. Capture, annotate, export. Privacy-first, no upload.',
+    // Declares the manifest strings' locale. Without it Chrome treats the
+    // extension as "English" and *never* shows a localized store listing
+    // to a Chinese user — even if one was uploaded. `public/_locales/`
+    // holds the per-locale overrides (see utils/i18n.ts for the runtime
+    // UI switch, which is a separate mechanism).
+    default_locale: 'en',
     permissions: [
       'activeTab',
       'scripting',

@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Shotly",
+    "description": "Extension name shown in the toolbar and the store."
+  },
+  "extensionDescription": {
+    "message": "现代整页截图工具。截图、标注、导出，隐私优先，不上传。",
+    "description": "Short description shown in the Chrome Web Store listing."
+  },
+  "actionTitle": {
+    "message": "Shotly — 整页截图",
+    "description": "Tooltip of the toolbar button."
+  }
+}

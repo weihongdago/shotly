@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Shotly",
+    "description": "Extension name shown in the toolbar and the store."
+  },
+  "extensionDescription": {
+    "message": "Modern whole-page screenshot tool. Capture, annotate, export. Privacy-first, no upload.",
+    "description": "Short description shown in the Chrome Web Store listing."
+  },
+  "actionTitle": {
+    "message": "Shotly — Capture whole page",
+    "description": "Tooltip of the toolbar button."
+  }
+}

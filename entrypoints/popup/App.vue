@@ -21,6 +21,7 @@ import {
   listHistory,
   type HistoryEntrySummary,
 } from '../../utils/history-store';
+import { useI18n } from '../../utils/i18n';
 
 const mode = ref<ThemeMode>('light');
 const status = ref<'idle' | 'starting' | 'selecting' | 'capturing' | 'finalizing' | 'done' | 'error'>('idle');
@@ -104,6 +105,12 @@ onUnmounted(() => {
 
 const t = () => theme[mode.value];
 
+// ─── i18n (v1.0: en / zh) ────────────────────────────────────────────────────
+// The store listing is English; the UI follows the browser language and
+// can be switched by the user. `t()` is the theme accessor, so the
+// translator is `i18n.t(...)`.
+const i18n = useI18n();
+
 function openPopupPort() {
   try {
     console.info('[shotly:popup] openPopupPort: calling chrome.runtime.connect');
@@ -139,9 +146,22 @@ function openPopupPort() {
             devicePixelRatio?: number;
             reason?: string;
           };
-          errorMsg.value = p.reason
-            ? `Page too long: ${p.reason}`
-            : `Page too long: ${p.totalHeight}px > ${p.limit}px limit`;
+          // Compose the message here, in the user's language — the content
+ // script cannot know the locale. The English `reason` it sends along
+          // is the fallback for anyone reading the raw payload.
+          const reason =
+            p.devicePixelRatio && p.devicePixelRatio > 1
+              ? i18n.t('error.pageTooLongReasonDpr', {
+                  height: p.totalHeight,
+                  dpr: p.devicePixelRatio,
+                  max: 65_535,
+                  limit: p.limit,
+                })
+              : i18n.t('error.pageTooLongReason', {
+                  height: p.totalHeight,
+                  limit: p.limit,
+                });
+          errorMsg.value = `${i18n.t('error.pageTooLong')}: ${reason}`;
           status.value = 'error';
           break;
         }
@@ -386,7 +406,7 @@ async function convertExport(target: ExportFormat): Promise<string | null> {
     format.value = target;
     return exportBlobUrl;
   } catch (err) {
-    errorMsg.value = `导出失败: ${(err as Error).message}`;
+    errorMsg.value = `${i18n.t('error.exportFailed')}: ${(err as Error).message}`;
     return null;
   } finally {
     exporting.value = false;
@@ -469,7 +489,7 @@ async function saveToHistory() {
     await loadHistory();
     status.value = 'done';
   } catch (err) {
-    errorMsg.value = `保存到历史失败: ${(err as Error).message}`;
+    errorMsg.value = `${i18n.t('error.saveHistoryFailed')}: ${(err as Error).message}`;
   } finally {
     saving.value = false;
   }
@@ -503,7 +523,7 @@ async function removeHistoryItem(id: string) {
     await deleteHistory(id);
     await loadHistory();
   } catch (err) {
-    errorMsg.value = `删除失败: ${(err as Error).message}`;
+    errorMsg.value = `${i18n.t('error.deleteFailed')}: ${(err as Error).message}`;
   }
 }
 </script>
@@ -525,16 +545,19 @@ async function removeHistoryItem(id: string) {
       </div>
       <div class="actions">
         <button
-          class="icon-btn"
+          class="icon-btn lang"
           :style="{ color: t().textMuted }"
-          title="Settings"
+          :title="i18n.t('app.language')"
+          :aria-label="i18n.t('app.language')"
+          @click="i18n.toggleLocale()"
         >
-          ⚙️
+          {{ i18n.locale.value === 'en' ? '中' : 'EN' }}
         </button>
         <button
           class="icon-btn"
           :style="{ color: t().textMuted }"
-          title="Help"
+          :title="i18n.t('app.help')"
+          :aria-label="i18n.t('app.help')"
         >
           ❓
         </button>
@@ -552,7 +575,7 @@ async function removeHistoryItem(id: string) {
         @click="captureFull"
       >
         <span class="card-icon">📷</span>
-        <span class="card-label">整页截图</span>
+        <span class="card-label">{{ i18n.t('capture.full') }}</span>
       </button>
       <button
         class="card"
@@ -565,7 +588,7 @@ async function removeHistoryItem(id: string) {
         @click="captureRegion"
       >
         <span class="card-icon">▭</span>
-        <span class="card-label">区域截图</span>
+        <span class="card-label">{{ i18n.t('capture.region') }}</span>
       </button>
       <button
         class="card"
@@ -577,7 +600,7 @@ async function removeHistoryItem(id: string) {
         @click="toggleHistory"
       >
         <span class="card-icon">⏱</span>
-        <span class="card-label">历史库</span>
+        <span class="card-label">{{ i18n.t('capture.history') }}</span>
       </button>
       <button
         class="card"
@@ -588,7 +611,7 @@ async function removeHistoryItem(id: string) {
         }"
       >
         <span class="card-icon">⌨</span>
-        <span class="card-label">快捷键</span>
+        <span class="card-label">{{ i18n.t('capture.shortcuts') }}</span>
       </button>
     </main>
 
@@ -602,12 +625,14 @@ async function removeHistoryItem(id: string) {
         borderColor: t().border,
       }"
     >
-      <div v-if="status === 'starting'" class="status-line">准备截图…</div>
+      <div v-if="status === 'starting'" class="status-line">
+        {{ i18n.t('status.preparing') }}
+      </div>
       <div v-else-if="status === 'selecting'" class="status-line">
-        选择区域中… 在页面上拖拽框选，Esc 取消
+        {{ i18n.t('status.selecting') }}
       </div>
       <div v-else-if="status === 'capturing' && progress" class="status-line">
-        截取中 {{ progress.i + 1 }} / {{ progress.total }}
+        {{ i18n.t('status.capturing') }} {{ progress.i + 1 }} / {{ progress.total }}
         <div class="bar">
           <div
             class="bar-fill"
@@ -618,9 +643,11 @@ async function removeHistoryItem(id: string) {
           />
         </div>
       </div>
-      <div v-else-if="status === 'finalizing'" class="status-line">合成中…</div>
+      <div v-else-if="status === 'finalizing'" class="status-line">
+        {{ i18n.t('status.finalizing') }}
+      </div>
       <div v-else-if="status === 'done' && result" class="status-line">
-        ✅ 完成 · {{ Math.round(result.byteSize / 1024) }} KB ·
+        ✅ {{ i18n.t('status.done') }} · {{ Math.round(result.byteSize / 1024) }} KB ·
         {{ result.width }}×{{ result.height }}
 
         <!-- Preview of the actual capture. Users want to see what they got
@@ -632,7 +659,11 @@ async function removeHistoryItem(id: string) {
             borderColor: t().border,
           }"
         >
-          <img :src="result.blobUrl" alt="截图预览" class="preview-img" />
+          <img
+            :src="result.blobUrl"
+            :alt="i18n.t('status.previewAlt')"
+            class="preview-img"
+          />
         </div>
 
         <!-- Format picker (PNG / JPG / PDF) -->
@@ -660,14 +691,14 @@ async function removeHistoryItem(id: string) {
             :disabled="exporting"
             @click="downloadResult"
           >
-            {{ exporting ? '处理中…' : '下载' }}
+            {{ exporting ? i18n.t('action.working') : i18n.t('action.download') }}
           </button>
           <button
             class="dl-btn secondary"
             :style="{ background: t().surface, color: t().text, borderColor: t().border }"
             @click="copyToClipboard"
           >
-            {{ copied ? '已复制' : '复制' }}
+            {{ copied ? i18n.t('action.copied') : i18n.t('action.copy') }}
           </button>
           <button
             class="dl-btn secondary"
@@ -675,7 +706,7 @@ async function removeHistoryItem(id: string) {
             :disabled="saving"
             @click="saveToHistory"
           >
-            {{ saving ? '保存中…' : '存历史' }}
+            {{ saving ? i18n.t('action.saving') : i18n.t('action.save') }}
           </button>
         </div>
       </div>
@@ -695,11 +726,11 @@ async function removeHistoryItem(id: string) {
       }"
     >
       <div class="history-head">
-        <span>历史库 ({{ historyItems.length }})</span>
+        <span>{{ i18n.t('history.title') }} ({{ historyItems.length }})</span>
         <button class="close-btn" @click="showHistory = false">✕</button>
       </div>
       <div v-if="historyItems.length === 0" class="history-empty">
-        还没有保存的截图
+        {{ i18n.t('history.empty') }}
       </div>
       <ul v-else class="history-list">
         <li v-for="item in historyItems" :key="item.id" class="history-item">
@@ -713,7 +744,9 @@ async function removeHistoryItem(id: string) {
               {{ new Date(item.meta.capturedAt).toLocaleString() }}
             </div>
           </div>
-          <button class="del-btn" @click="removeHistoryItem(item.id)">删除</button>
+          <button class="del-btn" @click="removeHistoryItem(item.id)">
+            {{ i18n.t('action.delete') }}
+          </button>
         </li>
       </ul>
     </section>
@@ -726,7 +759,7 @@ async function removeHistoryItem(id: string) {
         borderColor: t().border,
       }"
     >
-      ✨ 升级 Pro 解锁编辑器 + 水印
+      {{ i18n.t('footer.pro') }}
     </footer>
   </div>
 </template>
@@ -781,6 +814,14 @@ async function removeHistoryItem(id: string) {
 }
 .icon-btn:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+/* The language toggle shows a two-letter label ("EN" / "中"), not an
+   emoji — it needs a slightly smaller, tighter type treatment. */
+.icon-btn.lang {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  min-width: 28px;
 }
 
 .grid {
