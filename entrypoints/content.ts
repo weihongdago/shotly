@@ -47,6 +47,7 @@ import {
   selectRegion,
   sweepRegionOverlays,
 } from '../utils/region-selector';
+import { resolveLocale, translate } from '../utils/i18n';
 
 // Heartbeat offset from bg's 20s so they don't sync up + double the SW wake cost.
 const CONTENT_HEARTBEAT_MS = 25_000;
@@ -384,9 +385,14 @@ async function handleRegionStart(
   }
   regionFlowActive = true;
   try {
+    // The overlay is drawn on the page, so it has to speak the user's
+    // language — an English-locale user must not be greeted by a Chinese
+    // hint bar. The locale comes from the same override the popup uses.
+    const locale = await resolveLocale();
     const region = await selectRegion({
       minSize: MIN_REGION_SIZE,
-      hint: '拖拽框选区域 · 最小 100×100 · Esc 取消',
+      hint: translate(locale, 'region.hint', { min: MIN_REGION_SIZE }),
+      tooSmallMessage: translate(locale, 'region.tooSmall', { min: MIN_REGION_SIZE }),
     });
 
     if (!region) {

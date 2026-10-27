@@ -64,6 +64,9 @@ export const MESSAGES = {
     'error.pageTooLongReason': 'the page is {height}px tall; the limit is {limit}px',
     'error.pageTooLongReasonDpr':
       'the page is {height}px tall; at {dpr}× DPR the stitch canvas would exceed Chrome’s {max}px limit (max {limit}px)',
+    'region.hint': 'Drag to select a region · min {min}×{min} · Esc to cancel',
+    'region.hintPlain': 'Drag on the page to select a region · Esc to cancel',
+    'region.tooSmall': 'Selection too small (min {min}×{min}px) — drag again',
   },
   zh: {
     'app.settings': '设置',
@@ -96,6 +99,9 @@ export const MESSAGES = {
     'error.pageTooLongReason': '页面高 {height}px，上限 {limit}px',
     'error.pageTooLongReasonDpr':
       '页面高 {height}px；{dpr}× DPR 下拼接画布会超过 Chrome 的 {max}px 上限（最多 {limit}px）',
+    'region.hint': '拖拽框选区域 · 最小 {min}×{min} · Esc 取消',
+    'region.hintPlain': '拖拽鼠标框选区域 · Esc 取消',
+    'region.tooSmall': '选区太小（至少 {min}×{min}px），请重新拖拽',
   },
 } as const;
 
@@ -147,6 +153,20 @@ export async function saveLocaleOverride(locale: Locale | null): Promise<void> {
   } catch {
     /* storage unavailable (tests / restricted context) — keep the in-memory value */
   }
+}
+
+/**
+ * Resolve the locale for a **content script**.
+ *
+ * Content scripts run in the page's context, so they cannot use the
+ * popup's reactive state. They read the same persisted override instead,
+ * which keeps the overlay language in sync with what the user picked in
+ * the popup. `chrome.storage` is available to content scripts; `chrome.i18n`
+ * is not.
+ */
+export async function resolveLocale(): Promise<Locale> {
+  const override = await loadLocaleOverride();
+  return override ?? detectBrowserLocale();
 }
 
 /**

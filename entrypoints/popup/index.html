@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shotly</title>
+    <!-- WXT lifts this <title> into `action.default_title` in the manifest.
+         Using the __MSG_ placeholder here is what makes the toolbar
+         tooltip localized (Chrome substitutes it from _locales/<lang>). -->
+    <title>__MSG_actionTitle__</title>
     <meta name="manifest.type" content="browser_action" />
   </head>
   <body>

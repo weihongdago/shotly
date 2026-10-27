@@ -6,9 +6,11 @@ export default defineConfig({
   modules: ['@wxt-dev/module-vue'],
 
   manifest: {
-    name: 'Shotly',
-    description:
-      'Modern whole-page screenshot tool. Capture, annotate, export. Privacy-first, no upload.',
+    // `__MSG_*__` pulls the string from `public/_locales/<locale>/messages.json`.
+    // Without the placeholder the `_locales/` files are dead weight and the
+    // Chinese store listing never reaches the browser UI.
+    name: '__MSG_extensionName__',
+    description: '__MSG_extensionDescription__',
     // Declares the manifest strings' locale. Without it Chrome treats the
     // extension as "English" and *never* shows a localized store listing
     // to a Chinese user — even if one was uploaded. `public/_locales/`
@@ -27,7 +29,7 @@ export default defineConfig({
     ],
     host_permissions: ['<all_urls>'],
     action: {
-      default_title: 'Shotly — Capture whole page',
+      default_title: '__MSG_actionTitle__',
       default_popup: 'popup.html',
     },
     background: {

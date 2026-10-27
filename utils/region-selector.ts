@@ -75,6 +75,13 @@ export interface SelectRegionOptions {
   minSize?: number;
   /** Hint line rendered in the overlay. */
   hint?: string;
+  /**
+   * Message shown when the drag is smaller than `minSize`.
+   *
+   * Localized copy comes from `utils/i18n.ts`; the default is English so
+   * the util stays usable (and testable) without a Vue runtime.
+   */
+  tooSmallMessage?: string;
 }
 
 /** Minimal geometry contract a capture plan must satisfy. */
@@ -260,7 +267,10 @@ export function selectRegion(
   options: SelectRegionOptions = {},
 ): Promise<RegionSelection | null> {
   const minSize = options.minSize ?? MIN_REGION_SIZE;
-  const hint = options.hint ?? '拖拽鼠标框选区域 · Esc 取消';
+  const hint = options.hint ?? 'Drag on the page to select a region · Esc to cancel';
+  const tooSmallMessage =
+    options.tooSmallMessage ??
+    `Selection too small (min ${minSize}×${minSize}px) — drag again`;
 
   return new Promise<RegionSelection | null>((resolve) => {
     const body = document.body;
@@ -395,7 +405,7 @@ export function selectRegion(
 
       if (!isRegionLargeEnough(clamped, minSize)) {
         // Reject but keep the overlay alive so the user can simply try again.
-        showToast(`选区太小（至少 ${minSize}×${minSize}px），请重新拖拽`);
+        showToast(tooSmallMessage);
         box.style.setProperty('display', 'none', 'important');
         label.style.setProperty('display', 'none', 'important');
         return;
