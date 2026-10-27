@@ -79,6 +79,99 @@ describe('商店 listing ↔ 实现 一致性', () => {
     expect(existsSync(LISTING_PATH), `找不到 listing：${LISTING_PATH}`).toBe(true);
   });
 
+  /**
+   * CWS 表单字段的**硬上限**。
+   *
+   * 超限 = 表单直接不让你提交，而不是被审核挑出来。
+   * 上限是官方文档写死的（2026-10-27 核对）：
+   *   - 商品名称：45
+   *   - 简短说明：132
+   *   - 详细说明：16000
+   *
+   * 这些数字不常变，但**文案**会变 —— 改文案的人不会记得回头看上限。
+   * 这里验两道：
+   *   1. 实际文案没超限（超了 = 提审时表单报错）
+   *   2. listing 里括号里写的那个数字 = 实际字符数（防止自我安慰）
+   */
+  test('CWS 表单字段没超硬上限（超限 = 表单不让提交）', () => {
+    const s = readListing();
+
+    const name = s.match(/## 1\. 商品名称\s*\n\n\*\*(.+?)\*\*/)?.[1];
+    expect(name, 'listing 第 1 节没找到商品名称').toBeTruthy();
+    expect(
+      name!.length,
+      `商品名称 ${name!.length} 字符，超过 CWS 上限 45：「${name!}」`,
+    ).toBeLessThanOrEqual(45);
+
+    const shortDesc = s.match(/## 2\.[\s\S]*?```\n([\s\S]*?)\n```/)?.[1];
+    expect(shortDesc, 'listing 第 2 节没找到简短说明').toBeTruthy();
+    expect(
+      shortDesc!.length,
+      `简短说明 ${shortDesc!.length} 字符，超过 CWS 上限 132`,
+    ).toBeLessThanOrEqual(132);
+
+    const detail = s
+      .split('## 3.')[1]
+      ?.split('## 4.')[0]
+      ?.match(/```\n([\s\S]*?)\n```/)?.[1];
+    expect(detail, 'listing 第 3 节没找到详细说明').toBeTruthy();
+    expect(
+      detail!.length,
+      `详细说明 ${detail!.length} 字符，超过 CWS 上限 16000`,
+    ).toBeLessThanOrEqual(16000);
+
+    // 中文版同样有上限
+    const cnName = s.match(/### 9\.1 商品名称\s*\n+```\n([\s\S]*?)\n```/)?.[1];
+    expect(cnName, 'listing 9.1 没找到中文商品名称').toBeTruthy();
+    expect(cnName!.length, `中文商品名称 ${cnName!.length} 字符，超过上限 45`).toBeLessThanOrEqual(45);
+
+    const cnShort = s.match(/### 9\.2 简短说明[\s\S]*?```\n([\s\S]*?)\n```/)?.[1];
+    expect(cnShort, 'listing 9.2 没找到中文简短说明').toBeTruthy();
+    expect(cnShort!.length, `中文简短说明 ${cnShort!.length} 字符，超过上限 132`).toBeLessThanOrEqual(132);
+  });
+
+  /**
+   * listing 里括号里声称的字符数 = 实际字符数。
+   *
+   * D+4 夜间发现提审手册写「详细说明 1122 字符」，实际只有 1079。
+   * 数字本身不是审核项，但它一旦不准就说明**没人真的数过** ——
+   * 而这份文案是要直接粘贴进 CWS 表单的。
+   */
+  test('listing 里声称的字符数 = 实际字符数', () => {
+    const s = readListing();
+
+    /**
+     * ⚠️ 必须把标注正则**限定在该字段所属的章节**里。
+     * 否则 `s.match(/（(\d+) 字符/)` 会命中全文**第一个**出现的位置
+     * （商品名称那行），拿它的数字去对简短说明 —— 报错信息会指向错的字段。
+     */
+    const check = (label: string, actual: string, scope: string, claimedLine: RegExp) => {
+      const m = scope.match(claimedLine);
+      expect(m, `listing 的${label}节里没找到字符数标注`).toBeTruthy();
+      const claimed = Number(m![1]);
+      expect(
+        claimed,
+        `${label} 标注的字符数 ${claimed} ≠ 实际 ${actual.length}`,
+      ).toBe(actual.length);
+    };
+
+    const sec1 = s.split('## 1.')[1]?.split('## 2.')[0] ?? '';
+    const name = sec1.match(/\*\*(.+?)\*\*/)?.[1] ?? '';
+    check('商品名称', name, sec1, /（(\d+) 字符，Chrome Web Store 上限 45/);
+
+    const sec2 = s.split('## 2.')[1]?.split('## 3.')[0] ?? '';
+    const shortDesc = sec2.match(/```\n([\s\S]*?)\n```/)?.[1] ?? '';
+    check('简短说明', shortDesc, sec2, /（(\d+) 字符，上限 132/);
+
+    const sec91 = s.split('### 9.1')[1]?.split('### 9.2')[0] ?? '';
+    const cnName = sec91.match(/```\n([\s\S]*?)\n```/)?.[1] ?? '';
+    check('中文商品名称', cnName, sec91, /（(\d+) 字符，上限 45/);
+
+    const sec92 = s.split('### 9.2')[1]?.split('### 9.3')[0] ?? '';
+    const cnShort = sec92.match(/```\n([\s\S]*?)\n```/)?.[1] ?? '';
+    check('中文简短说明', cnShort, sec92, /（(\d+) 字符/);
+  });
+
   test('listing 提到的每个快捷键都在 wxt.config.ts 里声明', () => {
     const declared = new Set(declaredShortcuts());
     const mentioned = new Set(readSubmittedCopy().match(/Alt\+Shift\+[A-Z]/g) ?? []);

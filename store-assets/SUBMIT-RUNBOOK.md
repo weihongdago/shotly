@@ -68,7 +68,7 @@ Chrome 跑真实截图）。**提审时用 CI 产出的那个 zip，别用本地
 
 | 字段 | 填什么 | 字数 | 上限 |
 |---|---|---|---|
-| Detailed description | `CWS-listing.md` **第 3 节**代码块内容（英文） | 1122 | 16000 |
+| Detailed description | `CWS-listing.md` **第 3 节**代码块内容（英文） | 1079 | 16000 |
 | Primary category | **Productivity**（或 Screenshots） | — | — |
 | Language | English | — | — |
 
@@ -226,7 +226,7 @@ Account 页和这里两处。
 | 「权限过多」 | 9 条权限逐条有理由，且实测无网络请求 | 附上 §4.2 的理由表 + 隐私测试结论 |
 | 「listing 描述的功能与扩展不符」 | listing ↔ 实现一致性守门（CI 每次 push 跑） | 贴 CI 通过记录 |
 | 「隐私政策不可访问」 | GitHub Pages 已上线 | 换 `getshotly.com`（更稳） |
-| 「功能不足 / 只是个空壳」 | 6 个功能全部可用，有 25 条 E2E | 贴测试报告 |
+| 「功能不足 / 只是个空壳」 | 6 个功能全部可用，有 28 条 E2E | 贴测试报告 |
 | 「需要域名」 | 隐私政策 URL 现在挂在 GitHub Pages | 注册 `getshotly.com` 换上去 |
 
 > 📌 被拒后会收到邮件说明具体拒因。**改完重新提交版本号必须更大**
@@ -240,9 +240,9 @@ Account 页和这里两处。
 
 ```bash
 cd projects/gofullpage-clone/shotly
-pnpm build && pnpm zip && pnpm test          # 196 单测
+pnpm build && pnpm zip && pnpm test          # 208 单测
 cd ../test-infra
-pnpm exec playwright test e2e/                # 25 E2E
+pnpm exec playwright test e2e/                # 28 E2E
 ```
 
 或直接看 CI：https://github.com/weihongdago/shotly/actions

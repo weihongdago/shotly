@@ -8,7 +8,7 @@
  *   - Relay captured chunks to the offscreen document's OffscreenCanvas.
  *   - Maintain a single offscreen document (Chrome hard constraint: one per extension).
  *   - Relay finalize → blob URL back to both content + popup.
- *   - Handle keyboard shortcuts (Alt+Shift+S / Alt+Shift+V) by kicking the pipeline.
+ *   - Handle the keyboard shortcut (Alt+Shift+S) by kicking the pipeline.
  *
  * Capture pipeline data flow:
  *
