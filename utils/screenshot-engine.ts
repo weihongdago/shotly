@@ -16,6 +16,7 @@
 import { sleep } from './messaging';
 import {
   installIframePlaceholders,
+  isCrossOriginIframe,
   restoreIframes,
   type PlaceholderRecord,
 } from './iframe-placeholder';
@@ -409,6 +410,13 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
   const iframes = installIframePlaceholders();
   const hidden = hideFixedElements();
   const primedLazy = primeLazyImages();
+  // Same-origin iframes cannot be forced to load (unlike lazy images), so
+  // the only way to keep their content in the screenshot is to wait for
+  // them. Cross-origin ones are already placeholders by now.
+  const waitedFrames = await waitForIframesReady();
+  if (waitedFrames > 0) {
+    console.info(`[shotly] waited for ${waitedFrames} same-origin iframe(s) to load`);
+  }
   // `captureVisibleTab` only ever returns the VISIBLE viewport, so the
   // capture has to walk the page one viewport at a time — the 4096px
   // `plan.segments` are a different concern (how much page there is).
@@ -466,6 +474,60 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
   }
 
   return { chunks, iframes, hidden };
+}
+
+/**
+ * Wait until the **same-origin** iframes have finished loading.
+ *
+ * Why this exists: a screenshot that starts while an iframe is still
+ * loading captures an empty box where the embed should be. Unlike a lazy
+ * image — which `primeLazyImages` can force to load eagerly — an iframe
+ * cannot be forced; the only fix is to wait.
+ *
+ * This bit us in the PoC-D3 S3 scenario: the same-origin iframe's badge
+ * (`#DAFBE1`) was missing from the PNG on the first run and present on the
+ * second — a race, not a logic error. A screenshot tool that intermittently
+ * drops a block of content is worse than one that takes 300ms longer.
+ *
+ * Cross-origin iframes are irrelevant here: they get replaced by
+ * placeholders before the capture (and their content is unreadable
+ * anyway).
+ *
+ * Bounded: never wait longer than `timeoutMs` per frame.
+ *
+ * @returns how many same-origin frames were waited on
+ */
+export async function waitForIframesReady(timeoutMs = 3_000): Promise<number> {
+  const frames = Array.from(document.querySelectorAll('iframe')).filter(
+    (frame) => !isCrossOriginIframe(frame),
+  );
+  if (frames.length === 0) return 0;
+
+  await Promise.all(
+    frames.map(
+      (frame) =>
+        new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(finish, timeoutMs);
+          frame.addEventListener('load', finish, { once: true });
+          // Already loaded? Then there is nothing to wait for.
+          try {
+            if (frame.contentDocument?.readyState === 'complete') finish();
+          } catch {
+            // Unreadable document → cross-origin in practice; don't wait.
+            finish();
+          }
+        }),
+    ),
+  );
+
+  return frames.length;
 }
 
 // ─── OffscreenCanvas stitch (architecture §3.1 final step) ────────────────────

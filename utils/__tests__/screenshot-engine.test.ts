@@ -12,6 +12,7 @@ import {
   primeLazyImages,
   resolveDeviceScale,
   restoreFixedElements,
+  waitForIframesReady,
   type ScreenshotPlan,
 } from '../screenshot-engine';
 
@@ -336,6 +337,69 @@ describe('device-pixel canvas limits', () => {
 });
 
 // ─── Device scale resolution ─────────────────────────────────────────────────
+
+describe('waitForIframesReady (S3 race)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    Object.defineProperty(window, 'location', {
+      value: { href: 'https://example.com/' },
+      writable: true,
+      configurable: true,
+    });
+  });
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('returns 0 when there are no iframes', async () => {
+    await expect(waitForIframesReady(50)).resolves.toBe(0);
+  });
+
+  it('waits for a same-origin iframe and resolves once it has loaded', async () => {
+    const frame = document.createElement('iframe');
+    frame.src = 'child.html';
+    document.body.append(frame);
+
+    // Simulate "still loading": the document is not complete yet.
+    Object.defineProperty(frame, 'contentDocument', {
+      get: () => ({ readyState: 'loading' }) as unknown as Document,
+      configurable: true,
+    });
+
+    const pending = waitForIframesReady(1_000);
+    setTimeout(() => frame.dispatchEvent(new Event('load')), 10);
+    await expect(pending).resolves.toBe(1);
+  });
+
+  it('does not wait for a cross-origin iframe (it becomes a placeholder)', async () => {
+    const frame = document.createElement('iframe');
+    frame.src = 'https://youtube.com/embed/1';
+    document.body.append(frame);
+    Object.defineProperty(frame, 'contentDocument', {
+      get: () => {
+        throw new DOMException('cross-origin', 'SecurityError');
+      },
+      configurable: true,
+    });
+
+    // Resolves immediately — no cross-origin frame is waited on.
+    await expect(waitForIframesReady(200)).resolves.toBe(0);
+  });
+
+  it('gives up after the timeout instead of hanging forever', async () => {
+    const frame = document.createElement('iframe');
+    frame.src = 'child.html';
+    document.body.append(frame);
+    Object.defineProperty(frame, 'contentDocument', {
+      get: () => ({ readyState: 'loading' }) as unknown as Document,
+      configurable: true,
+    });
+
+    const started = Date.now();
+    await expect(waitForIframesReady(60)).resolves.toBe(1);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
 
 describe('resolveDeviceScale', () => {
   it('trusts the page DPR when the bitmap can hold the viewport at that scale', () => {

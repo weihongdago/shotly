@@ -33,6 +33,7 @@ import {
   resolveDeviceScale,
   runScrollAndCapture,
   PER_SEGMENT_BUFFER_MS,
+  waitForIframesReady,
   waitForNetworkIdle,
   maxAllowedCssHeight,
   MAX_CANVAS_DIMENSION_PX,
