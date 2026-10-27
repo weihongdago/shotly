@@ -23,6 +23,7 @@ const LISTING_PATH = resolve(ROOT, 'store-assets', 'CWS-listing.md');
 const WXT_CONFIG = resolve(ROOT, 'wxt.config.ts');
 const BACKGROUND = resolve(ROOT, 'entrypoints', 'background.ts');
 const MANIFEST = resolve(ROOT, '.output', 'chrome-mv3', 'manifest.json');
+const RUNBOOK = resolve(ROOT, 'store-assets', 'SUBMIT-RUNBOOK.md');
 
 /**
  * 有些检查必须读**真实构建产物**（.output/chrome-mv3/）。
@@ -169,5 +170,44 @@ describe('商店 listing ↔ 实现 一致性', () => {
       unsupported,
       `listing 声称支持 ${unsupported.join(' / ')}，但这些浏览器上扩展跑不起来`,
     ).toEqual([]);
+  });
+
+  test('提审手册的权限理由表与 listing 第 6 节完全一致', () => {
+    // 提审手册（SUBMIT-RUNBOOK.md）是给「$5 到账后照着填」用，
+    // 里面抄了一份权限理由表。两份一旦漂移，审核时照着填的就是旧文案
+    // —— 而审核看的 manifest 是当下的。
+    //
+    // SSOT 是 listing 第 6 节；手册只是它的副本。
+    const runbook = readFileSync(RUNBOOK, 'utf8');
+
+    // 提取两边「| `perm` | reason |」形式的行，比对权限名与理由文本。
+    const rows = (text: string) =>
+      new Map(
+        [...text.matchAll(/^\| `([a-zA-Z<>/_]+)` \| ([^|]+) \|/gm)].map((m) => [
+          m[1],
+          m[2].trim(),
+        ]),
+      );
+
+    // ⚠️ listing 里有**两张**权限表：第 6 节（英文，提交用）和
+    //    第 9.4 节（中文，参考用）。这里只能取英文那张 ——
+    //    否则 Map 会被后出现的中文行覆盖，比对的就不是同一个东西了。
+    const listingText = readListing();
+    const enSection = listingText.split(/^## 6\./m)[1]?.split(/^## 7\./m)[0] ?? '';
+    expect(enSection.length, 'listing 第 6 节（英文权限表）没找到').toBeGreaterThan(100);
+
+    const listingRows = rows(enSection);
+    const runbookRows = rows(runbook);
+
+    expect(listingRows.size, 'listing 第 6 节的权限表解析不出来').toBeGreaterThan(0);
+    expect(runbookRows.size, '提审手册的权限表解析不出来').toBeGreaterThan(0);
+
+    for (const [perm, reason] of listingRows) {
+      expect(runbookRows.has(perm), `提审手册缺权限 "${perm}" 的理由`).toBe(true);
+      expect(
+        runbookRows.get(perm),
+        `提审手册里 "${perm}" 的理由与 listing 第 6 节不一致 —— 以 listing 为准`,
+      ).toBe(reason);
+    }
   });
 });
