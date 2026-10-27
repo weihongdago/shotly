@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OVERLAY_ATTR, sweepRegionOverlays } from '../region-selector';
 import {
   MIN_REGION_SIZE,
   clampRegion,
@@ -239,5 +240,49 @@ describe('computeRegionCrop', () => {
       scale,
     );
     expect(crop).toBeNull();
+  });
+});
+
+// ─── Overlay leftovers ───────────────────────────────────────────────────────
+
+describe('sweepRegionOverlays', () => {
+  function clearBody() {
+    document.body.innerHTML = '';
+  }
+
+  it('removes a leftover overlay and reports the count', () => {
+    clearBody();
+    const overlay = document.createElement('div');
+    overlay.setAttribute(OVERLAY_ATTR, '1');
+    document.body.append(overlay);
+
+    expect(sweepRegionOverlays()).toBe(1);
+    expect(document.querySelector(`[${OVERLAY_ATTR}]`)).toBeNull();
+  });
+
+  it('leaves the page content alone', () => {
+    clearBody();
+    const keep = document.createElement('div');
+    keep.className = 'page-content';
+    const overlay = document.createElement('div');
+    overlay.setAttribute(OVERLAY_ATTR, '1');
+    document.body.append(keep, overlay);
+
+    sweepRegionOverlays();
+
+    expect(document.body.contains(keep)).toBe(true);
+    expect(document.body.contains(overlay)).toBe(false);
+  });
+
+  it('is a no-op when there is no leftover', () => {
+    clearBody();
+    document.body.append(document.createElement('p'));
+    expect(sweepRegionOverlays()).toBe(0);
+  });
+
+  it('the overlay attribute is the documented marker', () => {
+    // The content script sweeps by this exact attribute name — if it
+    // changes, both sides have to change together.
+    expect(OVERLAY_ATTR).toBe('data-shotly-region-overlay');
   });
 });

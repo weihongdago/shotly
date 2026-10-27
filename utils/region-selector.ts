@@ -38,8 +38,30 @@ import { type RegionSelection } from './messaging';
 /** Minimum selection size in CSS px (architecture B1: "最小支持 100x100"). */
 export const MIN_REGION_SIZE = 100;
 
-/** Marks the overlay element so leftovers can be detected/removed. */
-const OVERLAY_ATTR = 'data-shotly-region-overlay';
+/**
+ * Marks the overlay element so leftovers can be detected/removed.
+ *
+ * The content script sweeps `[data-shotly-region-overlay]` on injection:
+ * if the page navigated (or the service worker died) mid-selection, the
+ * overlay's `cleanup()` never ran and a full-screen transparent sheet
+ * would sit on top of the page, swallowing every click.
+ */
+export const OVERLAY_ATTR = 'data-shotly-region-overlay';
+
+/**
+ * Remove any region-selection overlay left behind by a previous run.
+ *
+ * Returns how many leftovers were removed. Safe to call at any time — it
+ * only touches elements carrying `OVERLAY_ATTR`.
+ */
+export function sweepRegionOverlays(root: ParentNode = document): number {
+  let removed = 0;
+  for (const leftover of Array.from(root.querySelectorAll(`[${OVERLAY_ATTR}]`))) {
+    leftover.remove();
+    removed += 1;
+  }
+  return removed;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -45,6 +45,7 @@ import {
   computeRegionCrop,
   segmentsCoveringRegion,
   selectRegion,
+  sweepRegionOverlays,
 } from '../utils/region-selector';
 
 // Heartbeat offset from bg's 20s so they don't sync up + double the SW wake cost.
@@ -64,6 +65,20 @@ export default defineContentScript({
       document.documentElement.setAttribute('data-shotly-content', 'ready');
     } catch {
       /* document may be in a weird state (e.g. XML) — not fatal */
+    }
+
+    // Remove a region-selection overlay left behind by a previous run.
+    //
+    // ⚠️ The overlay is normally removed in `cleanup()`, but if the page
+    // navigated (or the SW was killed) mid-selection, the cleanup never
+    // ran and the overlay stays on top of the page — a full-screen
+    // transparent sheet that swallows every click. The overlay is marked
+    // with `data-shotly-region-overlay` precisely so it can be found
+    // again; without this sweep the marker is write-only.
+    try {
+      sweepRegionOverlays();
+    } catch {
+      /* not fatal */
     }
 
     chrome.runtime.onConnect.addListener((port) => {
