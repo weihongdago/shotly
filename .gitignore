@@ -27,3 +27,6 @@ web-ext.config.ts
 .output/
 .wxt/
 node_modules/
+
+# 公开站点构建产物（tools/build-pages.mjs 生成）
+dist-pages/
