@@ -53,9 +53,50 @@ jobs:
       - name: Build (firefox-mv2)
         run: pnpm build:firefox
 
+      # 提交给 CWS 的是 zip，不是 .output/chrome-mv3/。打包步骤本身是个
+      # 黑盒（locale 目录可能漏打、manifest 可能被改写），所以在 CI 里
+      # 把 zip 也跑一遍冒烟。
+      - name: Package (zip)
+        run: pnpm zip
+
+      # ⚠️ 打包产物的冒烟测试需要 Playwright + 真实 Chrome，而且用的是
+      #    headful（Playwright 自带 Chromium）——CI 里跑不了 headful。
+      #    所以这里只做**静态**校验：zip 能解开、关键文件都在、manifest
+      #    与 unpacked 构建一致。真实浏览器跑 zip 的那条测试在本地跑
+      #    （test-infra/e2e/playwright-packaged-zip.spec.ts），
+      #    CI 里用下面的 zip 完整性检查做兜底。
+      - name: Verify packaged zip (static)
+        run: |
+          set -euo pipefail
+          ZIP=$(ls .output/shotly-*.zip | head -1)
+          echo "→ $ZIP"
+          rm -rf /tmp/zcheck && mkdir -p /tmp/zcheck
+          unzip -q "$ZIP" -d /tmp/zcheck
+          for f in manifest.json popup.html offscreen.html background.js \
+                   _locales/en/messages.json _locales/zh_CN/messages.json; do
+            if [ ! -f "/tmp/zcheck/$f" ]; then
+              echo "✗ zip 里缺 $f" >&2
+              exit 1
+            fi
+            echo "✓ $f"
+          done
+          # manifest 不能在打包时被改写
+          diff <(cat .output/chrome-mv3/manifest.json) <(cat /tmp/zcheck/manifest.json)
+          echo "✓ manifest 一致"
+          # zip 里不能有多余文件（比如本地开发残留）
+          EXTRA=$(cd /tmp/zcheck && find . -type f | wc -l)
+          echo "✓ zip 共 $EXTRA 个文件"
+
       - name: Upload chrome-mv3 artifact
         uses: actions/upload-artifact@v4
         with:
           name: shotly-chrome-mv3
           path: .output/chrome-mv3
+          retention-days: 14
+
+      - name: Upload packaged zip (提交给 CWS 的就是这个)
+        uses: actions/upload-artifact@v4
+        with:
+          name: shotly-chrome-zip
+          path: .output/shotly-*.zip
           retention-days: 14
