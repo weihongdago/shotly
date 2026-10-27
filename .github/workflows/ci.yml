@@ -93,6 +93,12 @@ jobs:
           name: shotly-chrome-mv3
           path: .output/chrome-mv3
           retention-days: 14
+          # ⚠️ include-hidden-files 必须开：`.output/` 以点开头，
+          #    v4.4+ 默认 false 会把整个目录当隐藏文件跳过 → 静默上传 0 个文件。
+          #    if-no-files-found 必须是 error —— 用 warn 的话上传失败
+          #    整个 CI 依然是绿的，而 artifact 根本不存在（踩过）。
+          include-hidden-files: true
+          if-no-files-found: error
 
       - name: Upload packaged zip (提交给 CWS 的就是这个)
         uses: actions/upload-artifact@v4
@@ -100,3 +106,6 @@ jobs:
           name: shotly-chrome-zip
           path: .output/shotly-*.zip
           retention-days: 14
+          # 同上：`.output/` 是隐藏目录，不开这个开关会静默上传 0 个文件。
+          include-hidden-files: true
+          if-no-files-found: error
