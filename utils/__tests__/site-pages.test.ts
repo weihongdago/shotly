@@ -123,4 +123,128 @@ describe.skipIf(!DIST_READY)('公开站点（GitHub Pages）', () => {
       }
     }
   });
+
+  /**
+   * 首页「What it does」里的每一条，代码里都要真的能做。
+   *
+   * ## 为什么需要这条
+   *
+   * D+4 深夜发现：首页写着「Local history (50 entries, LRU) so you can
+   * **re-download** yesterday's shot」，但当时 popup 里历史库**只能删、
+   * 不能下载** —— 站点吹了一个不存在的功能。
+   *
+   * 这条比 listing 漂移更危险：listing 的文案会被审核逐句读，
+   * 但**首页是审核员随手点开的**。吹了就会变成「功能不足 / 只是个空壳」
+   * 的拒因。
+   *
+   * 所以这里逐条验：站点声称的能力 → 代码里必须有对应实现。
+   */
+  test('首页声称的每个功能，代码里都要真的能做', () => {
+    const src = ['entrypoints', 'utils']
+      .flatMap((d) => {
+        const dir = resolve(ROOT, d);
+        if (!existsSync(dir)) return [];
+        const out: string[] = [];
+        const walk = (p: string) => {
+          for (const e of readdirSync(p, { withFileTypes: true })) {
+            const full = resolve(p, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (/\.(ts|vue)$/.test(e.name) && !e.name.includes('__tests__')) out.push(full);
+          }
+        };
+        walk(dir);
+        return out;
+      })
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+
+    const index = readDist('index.html');
+
+    // 站点文案里的关键词 → 代码里必须存在的证据
+    const claims: Array<{ kw: RegExp; evidence: RegExp; label: string }> = [
+      {
+        kw: /re-download/i,
+        label: '从历史库重新下载',
+        // 必须是**真的**下载：既要有 store 取 blob 的接口，也要有 popup 的下载动作
+        evidence: /getHistoryBlob\s*\(/,
+      },
+      {
+        kw: /50 entries|LRU/i,
+        label: '历史库 50 条 + LRU 淘汰',
+        evidence: /HISTORY_MAX_ENTRIES\s*=\s*50/,
+      },
+      {
+        kw: /Region capture/i,
+        label: '区域截图',
+        evidence: /captureRegion/,
+      },
+      {
+        kw: /PNG,? JPG or PDF/i,
+        label: '导出 PNG / JPG / PDF',
+        evidence: /application\/pdf/,
+      },
+      {
+        kw: /clipboard/i,
+        label: '复制到剪贴板',
+        evidence: /clipboard\.write\(/,
+      },
+      {
+        kw: /live progress bar/i,
+        label: '实时进度条',
+        evidence: /progress/i,
+      },
+      {
+        kw: /Light and dark UI/i,
+        label: '深浅色 UI',
+        evidence: /prefers-color-scheme/,
+      },
+    ];
+
+    for (const c of claims) {
+      if (!c.kw.test(index)) continue; // 站点没提这条，跳过
+      expect(
+        c.evidence.test(src),
+        `首页声称「${c.label}」，但代码里找不到对应实现 —— 站点吹了不存在的功能`,
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * 「re-download」这条要在 **store 层**再查一次。
+   *
+   * 上一条用聚合源码做证据匹配，有漏洞：把 store 里的
+   * `getHistoryBlob` 改名后，popup 里的**调用点**还是匹配得上，
+   * 守门就漏了。所以这条直接验 store 里**定义**了这个导出函数。
+   */
+  test('首页声称能 re-download，store 层就得真的提供取 blob 的接口', () => {
+    const index = readDist('index.html');
+    if (!/re-download/i.test(index)) return;
+
+    const store = readFileSync(resolve(ROOT, 'utils', 'history-store.ts'), 'utf8');
+    expect(
+      /export\s+async\s+function\s+getHistoryBlob\s*\(/m.test(store),
+      '首页声称能 re-download，但 utils/history-store.ts 里没有导出 getHistoryBlob —— store 层取不到 blob',
+    ).toBe(true);
+  });
+
+  /**
+   * 「re-download」这条要**额外**查一次 popup 里有没有下载动作。
+   *
+   * 上一条只查了 store 层有 `getHistoryBlob` —— 但如果 popup 根本没调用它，
+   * 用户在界面上还是下载不了。这条验的是**界面层**。
+   */
+  test('首页声称能 re-download，popup 界面就必须真的有下载动作', () => {
+    const index = readDist('index.html');
+    if (!/re-download/i.test(index)) return;
+
+    const popup = readFileSync(resolve(ROOT, 'entrypoints', 'popup', 'App.vue'), 'utf8');
+    expect(
+      /downloadHistoryItem/.test(popup),
+      '首页声称能 re-download，但 popup 里没有下载历史条目的动作',
+    ).toBe(true);
+    expect(
+      /@click="downloadHistoryItem\(/i.test(popup),
+      'popup 里有 downloadHistoryItem 函数，但没有绑到任何按钮上 —— 界面上点不到',
+    ).toBe(true);
+  });
 });

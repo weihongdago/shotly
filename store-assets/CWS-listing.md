@@ -141,7 +141,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 
 ## 8. 提审前检查清单
 
-- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（196/196）
+- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（230/230）
 - [x] `pnpm zip` 产出包已验证（`.output/shotly-0.1.0-chrome.zip`，230 KB，16 个文件，含 `_locales/`）
 - [x] **打包产物本身**已测（`playwright-packaged-zip.spec.ts`：从 zip 解压出来装进 Chrome 跑真实截图）
 - [x] CI 直接产出可提审的 zip artifact（`shotly-chrome-zip`）—— 提审时直接下，不用本地重新打包
@@ -152,7 +152,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 - [x] 主页 URL 可公开访问（https://weihongdago.github.io/shotly/）
 - [x] 4 张功能截图补齐（1280×800，真实浏览器产出）
 - [x] 2 份 listing 文本补齐（English + 中文（简体）→ 见第 9 节）
-- [x] listing ↔ 实现 一致性守卫（vitest 版在 CI 每次 push 都跑，5 用例；另有 Playwright 版 4 用例）
+- [x] listing ↔ 实现 一致性守卫（vitest 版在 CI 每次 push 都跑，15 用例；另有 Playwright 版 4 用例）
 - [x] 隐私承诺运行时断言（`test-infra/e2e/playwright-privacy-no-network.spec.ts`，2 用例）——「不上传不追踪」是被测的，不是被声称的
 - [ ] 开发者账号 $5 注册费到账
 - [x] 版本号 = 0.1.0，商店描述写「Free & open source」

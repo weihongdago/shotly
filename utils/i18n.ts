@@ -60,6 +60,8 @@ export const MESSAGES = {
     'error.exportFailed': 'Export failed',
     'error.saveHistoryFailed': 'Save to history failed',
     'error.deleteFailed': 'Delete failed',
+    'error.downloadFailed': 'Download failed',
+    'error.historyMissing': 'That screenshot is no longer in the history library',
     'error.pageTooLong': 'Page too long',
     'error.pageTooLongReason': 'the page is {height}px tall; the limit is {limit}px',
     'error.pageTooLongReasonDpr':
@@ -95,6 +97,8 @@ export const MESSAGES = {
     'error.exportFailed': '导出失败',
     'error.saveHistoryFailed': '保存到历史失败',
     'error.deleteFailed': '删除失败',
+    'error.downloadFailed': '下载失败',
+    'error.historyMissing': '这张截图已不在历史库里了',
     'error.pageTooLong': '页面太长',
     'error.pageTooLongReason': '页面高 {height}px，上限 {limit}px',
     'error.pageTooLongReasonDpr':

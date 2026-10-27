@@ -240,7 +240,7 @@ Account 页和这里两处。
 
 ```bash
 cd projects/gofullpage-clone/shotly
-pnpm build && pnpm zip && pnpm test          # 208 单测
+pnpm build && pnpm zip && pnpm test          # 230 单测
 cd ../test-infra
 pnpm exec playwright test e2e/                # 29 E2E
 ```

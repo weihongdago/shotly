@@ -58,6 +58,15 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # 提审文档里的测试数量不许漂。
+      # 这些数字是审核被质疑「功能不足」时要贴出来的证据，而手抄的数字
+      # 每次加测试就会过期（实测漂过：196→208→222）。
+      # 数字从 runner 自己数（vitest list / playwright --list），不是数源码。
+      # ⚠️ CI 里没有 test-infra/ 目录（E2E 在另一个仓库），所以 E2E 数
+      #    在这里数不到 —— 脚本会明确说出来，不假装数到了。
+      - name: Verify store doc numbers are current
+        run: node tools/sync-store-counts.mjs --check
+
       # ⚠️ 这只是**编译检查**，不是受支持的平台。
       #    捕获链路依赖 `chrome.offscreen`（OffscreenCanvas 拼接），
       #    Firefox 没实现这个 API（MDN browser-compat-data 里没有 offscreen 条目），

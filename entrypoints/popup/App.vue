@@ -18,6 +18,7 @@ import { buildExportFilename, EXPORT_MIME, type ExportFormat } from '../../utils
 import {
   addHistory,
   deleteHistory,
+  getHistoryBlob,
   listHistory,
   type HistoryEntrySummary,
 } from '../../utils/history-store';
@@ -38,6 +39,8 @@ const copied = ref(false);
 const saving = ref(false);
 const showHistory = ref(false);
 const historyItems = ref<HistoryEntrySummary[]>([]);
+/** Id of the history row currently being re-downloaded (for the spinner). */
+const downloadingHistoryId = ref<string | null>(null);
 /** Blob URL minted by the offscreen converter — kept so we can download it. */
 let exportBlobUrl: string | null = null;
 /** Title of the page we captured, used for the export filename. */
@@ -356,11 +359,62 @@ async function captureRegion() {
 // ─── Export (D+3) ────────────────────────────────────────────────────────────
 
 /**
- * Ask the background to convert the captured PNG into the selected format.
+ * Ask the background to convert a PNG blob URL into the selected format.
  *
  * Conversion happens in the offscreen document (it owns the canvas and
  * pdf-lib); the popup only ever holds a blob URL. We cache the converted
  * URL so re-downloading with the same format doesn't redo the work.
+ *
+ * `sourceUrl` is explicit rather than always reading `result.value` so the
+ * history library can reuse the exact same path (a history PNG is also a
+ * PNG blob URL).
+ */
+async function convertBlobUrl(
+  sourceUrl: string,
+  target: ExportFormat,
+): Promise<string | null> {
+  if (!port) return null;
+
+  const reqId = crypto.randomUUID();
+  const payload: ExportConvertRequest = {
+    sourceBlobUrl: sourceUrl,
+    format: target,
+  };
+  const reply = await new Promise<ExportConvertResponse>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`export '${target}' timed out after 30s`)),
+      30_000,
+    );
+    const listener = (env: Envelope) => {
+      if (env.id !== reqId) return;
+      clearTimeout(timer);
+      port?.onMessage.removeListener(listener);
+      if (env.type === `${EXPORT_MSG.CONVERT}:error`) {
+        reject(new Error((env.payload as { message: string }).message));
+      } else if (env.type === `${EXPORT_MSG.CONVERT}:result`) {
+        resolve(env.payload as ExportConvertResponse);
+      } else {
+        reject(new Error(`unexpected export reply: ${env.type}`));
+      }
+    };
+    port?.onMessage.addListener(listener);
+    port?.postMessage({
+      v: PROTOCOL_VERSION,
+      id: reqId,
+      scope: 'popup',
+      type: EXPORT_MSG.CONVERT,
+      payload,
+    } satisfies Envelope);
+  });
+
+  return reply.blobUrl;
+}
+
+/**
+ * Convert the *current capture* into the selected format.
+ *
+ * Caches the converted URL so switching back and forth doesn't redo the
+ * work — and so a second click on Download doesn't convert again.
  */
 async function convertExport(target: ExportFormat): Promise<string | null> {
   if (!result.value || !port) return null;
@@ -369,40 +423,10 @@ async function convertExport(target: ExportFormat): Promise<string | null> {
   exporting.value = true;
   errorMsg.value = null;
   try {
-    const reqId = crypto.randomUUID();
-    const payload: ExportConvertRequest = {
-      sourceBlobUrl: result.value.blobUrl,
-      format: target,
-    };
-    const reply = await new Promise<ExportConvertResponse>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`export '${target}' timed out after 30s`)),
-        30_000,
-      );
-      const listener = (env: Envelope) => {
-        if (env.id !== reqId) return;
-        clearTimeout(timer);
-        port?.onMessage.removeListener(listener);
-        if (env.type === `${EXPORT_MSG.CONVERT}:error`) {
-          reject(new Error((env.payload as { message: string }).message));
-        } else if (env.type === `${EXPORT_MSG.CONVERT}:result`) {
-          resolve(env.payload as ExportConvertResponse);
-        } else {
-          reject(new Error(`unexpected export reply: ${env.type}`));
-        }
-      };
-      port?.onMessage.addListener(listener);
-      port?.postMessage({
-        v: PROTOCOL_VERSION,
-        id: reqId,
-        scope: 'popup',
-        type: EXPORT_MSG.CONVERT,
-        payload,
-      } satisfies Envelope);
-    });
-
+    const blobUrl = await convertBlobUrl(result.value.blobUrl, target);
+    if (!blobUrl) return null;
     if (exportBlobUrl) URL.revokeObjectURL(exportBlobUrl);
-    exportBlobUrl = reply.blobUrl;
+    exportBlobUrl = blobUrl;
     format.value = target;
     return exportBlobUrl;
   } catch (err) {
@@ -410,6 +434,23 @@ async function convertExport(target: ExportFormat): Promise<string | null> {
     return null;
   } finally {
     exporting.value = false;
+  }
+}
+
+/**
+ * Convert a history PNG into the selected format.
+ *
+ * Deliberately does NOT touch `exportBlobUrl` — that's the cache for the
+ * current capture. A history conversion is a one-off.
+ */
+async function convertHistoryBlob(
+  sourceUrl: string,
+  target: ExportFormat,
+): Promise<string | null> {
+  try {
+    return await convertBlobUrl(sourceUrl, target);
+  } catch {
+    return null;
   }
 }
 
@@ -429,6 +470,66 @@ async function downloadResult() {
     a.remove();
   } catch (err) {
     errorMsg.value = `download failed: ${(err as Error).message}`;
+  }
+}
+
+/**
+ * Re-download a shot from the history library.
+ *
+ * The history panel used to offer **delete only** — you could save 50
+ * full-page PNGs and never get one back. The homepage promised
+ * "re-download yesterday's shot" and `getHistoryBlob()` existed (and was
+ * unit-tested) but nothing ever called it. So the promise was false.
+ *
+ * Flow: pull the PNG blob out of IndexedDB → mint a blob URL → convert it
+ * to the currently selected format through the offscreen document (same
+ * path as a fresh export, so JPG/PDF work too) → hand it to the browser.
+ *
+ * The blob URL is revoked right after the click; the download has already
+ * been handed to the browser by then.
+ */
+async function downloadHistoryItem(item: HistoryEntrySummary) {
+  errorMsg.value = null;
+  downloadingHistoryId.value = item.id;
+  try {
+    const blob = await getHistoryBlob(item.id);
+    if (!blob) {
+      errorMsg.value = i18n.t('error.historyMissing');
+      return;
+    }
+
+    const sourceUrl = URL.createObjectURL(blob);
+    let downloadUrl = sourceUrl;
+    try {
+      // Convert to the selected format via the offscreen document. If the
+      // conversion fails we still fall back to the original PNG — losing
+      // the shot entirely because JPG conversion hiccupped would be worse.
+      const converted = await convertHistoryBlob(sourceUrl, format.value);
+      if (converted) downloadUrl = converted;
+    } catch {
+      /* keep the raw PNG */
+    }
+
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = buildExportFilename({
+      title: item.meta.title,
+      format: format.value,
+      timestamp: item.meta.capturedAt,
+    });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    // Give the browser a beat to pick up the blob before revoking it.
+    setTimeout(() => {
+      if (downloadUrl !== sourceUrl) URL.revokeObjectURL(downloadUrl);
+      URL.revokeObjectURL(sourceUrl);
+    }, 30_000);
+  } catch (err) {
+    errorMsg.value = `${i18n.t('error.downloadFailed')}: ${(err as Error).message}`;
+  } finally {
+    downloadingHistoryId.value = null;
   }
 }
 
@@ -706,6 +807,7 @@ async function removeHistoryItem(id: string) {
           </button>
           <button
             class="dl-btn secondary"
+            data-shotly-action="save-history"
             :style="{ background: t().surface, color: t().text, borderColor: t().border }"
             :disabled="saving"
             @click="saveToHistory"
@@ -748,9 +850,21 @@ async function removeHistoryItem(id: string) {
               {{ new Date(item.meta.capturedAt).toLocaleString() }}
             </div>
           </div>
-          <button class="del-btn" @click="removeHistoryItem(item.id)">
-            {{ i18n.t('action.delete') }}
-          </button>
+          <div class="history-actions">
+            <button
+              class="del-btn"
+              data-shotly-action="history-download"
+              :disabled="downloadingHistoryId === item.id"
+              @click="downloadHistoryItem(item)"
+            >
+              {{ downloadingHistoryId === item.id
+                ? i18n.t('action.working')
+                : i18n.t('action.download') }}
+            </button>
+            <button class="del-btn" @click="removeHistoryItem(item.id)">
+              {{ i18n.t('action.delete') }}
+            </button>
+          </div>
         </li>
       </ul>
     </section>
@@ -1012,6 +1126,15 @@ async function removeHistoryItem(id: string) {
   font-size: 11px;
   padding: 2px 6px;
   color: inherit;
+}
+.del-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.history-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .footer {
