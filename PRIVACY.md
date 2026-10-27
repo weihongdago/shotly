@@ -21,7 +21,7 @@ Shotly 没有账号体系，没有埋点 SDK，没有分析服务，没有广告
 |------|---------|---------|
 | 截图图片 (Blob) | 浏览器 IndexedDB (本地) | 最多 50 条，超出自动淘汰最旧一条 |
 | 截图元数据（来源 URL / 标题 / 尺寸 / 时间） | 同上，与图片一起 | 同上 |
-| 用户偏好（主题、格式等） | `chrome.storage` (本地) | 永久，直到你卸载扩展 |
+| 用户偏好（界面语言选择） | `chrome.storage` (本地) | 永久，直到你卸载扩展 |
 
 **来源 URL 与页面标题仅用于给你自己生成文件名和历史列表，不会离开设备。**
 
@@ -31,7 +31,7 @@ Shotly 没有账号体系，没有埋点 SDK，没有分析服务，没有广告
 | `activeTab` | 在你点击扩展时读取当前页面 | 只有你主动触发时才作用于当前标签页 |
 | `scripting` | 注入选区脚本 | 区域截图需要 |
 | `offscreen` | 离屏画布拼接长图 | MV3 后台无法访问 DOM |
-| `storage` | 保存偏好设置 | 主题 / 默认导出格式 |
+| `storage` | 保存界面语言选择 | 选「自动 / English / 中文」后下次打开仍生效 |
 | `downloads` | 保存截图到本地磁盘 | 你的导出操作 |
 | `clipboardWrite` | 复制截图到剪贴板 | 你的复制操作 |
 | `unlimitedStorage` | 扩展 IndexedDB 容量 | 50 条长截图可能超过默认配额 |
@@ -69,7 +69,7 @@ Shotly has no accounts, no telemetry SDKs, no analytics services, and no ads. Th
 |------|----------|-----------|
 | Screenshot images (Blob) | Browser IndexedDB (local) | Up to 50 entries; oldest is evicted automatically |
 | Screenshot metadata (source URL / title / dimensions / timestamp) | Same store, alongside the image | Same |
-| Preferences (theme, default format) | `chrome.storage` (local) | Until you uninstall |
+| Preferences (interface language choice) | `chrome.storage` (local) | Until you uninstall |
 
 **The source URL and page title are used only to generate local filenames and history entries. They never leave your device.**
 
@@ -79,7 +79,7 @@ Shotly has no accounts, no telemetry SDKs, no analytics services, and no ads. Th
 | `activeTab` | Read the current page only when you trigger the extension |
 | `scripting` | Inject the region-selection script |
 | `offscreen` | Offscreen canvas for stitching long images (MV3 workers have no DOM) |
-| `storage` | Save preferences |
+| `storage` | Save your interface language choice |
 | `downloads` | Save screenshots to your disk when you ask |
 | `clipboardWrite` | Copy a screenshot to your clipboard when you ask |
 | `unlimitedStorage` | Expand IndexedDB quota so 50 long screenshots fit |

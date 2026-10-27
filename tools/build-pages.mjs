@@ -159,7 +159,7 @@ pnpm zip        # → .output/shotly-${VERSION}-chrome.zip</code></pre>
   <tr><td><code>activeTab</code></td><td>Reads the current tab only when you click the extension</td></tr>
   <tr><td><code>scripting</code></td><td>Injects the region-selection overlay on demand</td></tr>
   <tr><td><code>offscreen</code></td><td>Offscreen canvas — an MV3 service worker cannot use the DOM</td></tr>
-  <tr><td><code>storage</code></td><td>Your preferences (theme, default format)</td></tr>
+  <tr><td><code>storage</code></td><td>Your language choice, so it persists between popup opens</td></tr>
   <tr><td><code>downloads</code></td><td>Saves the file you export</td></tr>
   <tr><td><code>clipboardWrite</code></td><td>Copy-to-clipboard</td></tr>
   <tr><td><code>unlimitedStorage</code></td><td>The 50-entry history exceeds the default quota</td></tr>

@@ -149,7 +149,7 @@ Shotly captures full-page or region screenshots of the current tab and saves the
 | `activeTab` | Access the current tab only when the user clicks the extension icon, to capture the page they are viewing. |
 | `scripting` | Inject the region-selection overlay into the active tab when the user starts a region capture. |
 | `offscreen` | Use an offscreen document with a canvas to stitch multi-screen captures into a single full-page image. Required because MV3 service workers have no DOM access. |
-| `storage` | Store user preferences (theme, default export format) locally via chrome.storage. |
+| `storage` | Store your language choice (auto / English / 中文) locally via chrome.storage, so it persists between popup opens. |
 | `downloads` | Save exported screenshots (PNG/JPG/PDF) to the user's disk when the user clicks Download. |
 | `clipboardWrite` | Copy the captured screenshot to the clipboard when the user clicks the Copy button. |
 | `unlimitedStorage` | Store up to 50 full-page screenshots in a local IndexedDB history library. Default quota (~100KB–10MB) is insufficient for high-resolution captures. |

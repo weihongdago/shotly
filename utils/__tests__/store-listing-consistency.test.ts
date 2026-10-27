@@ -20,6 +20,7 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..', '..'); // shotly/
 const LISTING_PATH = resolve(ROOT, 'store-assets', 'CWS-listing.md');
+const PRIVACY_PATH = resolve(ROOT, 'PRIVACY.md');
 const WXT_CONFIG = resolve(ROOT, 'wxt.config.ts');
 const BACKGROUND = resolve(ROOT, 'entrypoints', 'background.ts');
 const MANIFEST = resolve(ROOT, '.output', 'chrome-mv3', 'manifest.json');
@@ -155,6 +156,197 @@ describe('商店 listing ↔ 实现 一致性', () => {
     }
     for (const p of declared) {
       expect(mentioned, `manifest 有权限 "${p}"，listing 里没有给出理由`).toContain(p);
+    }
+  });
+
+  /**
+   * 权限理由的**语义**必须和代码一致。
+   *
+   * 上面的用例只能验「权限名对得上」，验不了「理由写得对不对」。
+   * D+4 夜间的真实 bug：listing 写
+   *   | `storage` | Store user preferences (theme, default export format) |
+   * 但代码里 chrome.storage 只存了**语言选择**（`shotly.locale`）——
+   * 主题是跟随系统的（prefers-color-scheme），没有手动开关；
+   * 导出格式根本没持久化。
+   *
+   * 这不算假宣传（审核不会逐字核），但**理由写得比实际宽**就等于给审核
+   * 留了一个「这个权限到底用来干什么」的疑问。权限理由越具体，审核越容易放行。
+   *
+   * 所以这里逐条验：理由里提到的**每一项能力**，代码里都要真的存在。
+   */
+  test('权限理由里提到的每项能力，代码里都要真的存在', () => {
+    const src = ['entrypoints', 'utils']
+      .flatMap((d) => {
+        const dir = resolve(ROOT, d);
+        if (!existsSync(dir)) return [];
+        const out: string[] = [];
+        const walk = (p: string) => {
+          for (const e of readdirSync(p, { withFileTypes: true })) {
+            const full = resolve(p, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (/\.(ts|vue)$/.test(e.name) && !e.name.includes('__tests__')) out.push(full);
+          }
+        };
+        walk(dir);
+        return out;
+      })
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+
+    // 理由文本 → 能在代码里找到的证据（至少一个）
+    const claims: Array<{ perm: string; needle: RegExp; evidence: RegExp }> = [
+      {
+        perm: 'storage',
+        // 理由说存语言 → 代码必须有语言相关的 storage 键
+        needle: /language|locale|语言/i,
+        evidence: /chrome\.storage\.local\.(set|get)\(/,
+      },
+      {
+        perm: 'clipboardWrite',
+        needle: /clipboard/i,
+        evidence: /clipboard\.write\(/,
+      },
+      {
+        perm: 'downloads',
+        needle: /download|save/i,
+        evidence: /chrome\.downloads\.download\(/,
+      },
+      {
+        perm: 'tabs',
+        needle: /title|url/i,
+        evidence: /tabs\.query\(/,
+      },
+      {
+        perm: 'offscreen',
+        needle: /offscreen|canvas|stitch/i,
+        evidence: /chrome\.offscreen\.createDocument\(/,
+      },
+      {
+        perm: 'scripting',
+        needle: /region|overlay|inject/i,
+        evidence: /executeScript|scripting/i,
+      },
+      {
+        perm: 'activeTab',
+        needle: /current tab|activeTab|当前标签页/i,
+        evidence: /activeTab|tabs\.query\(/,
+      },
+      {
+        perm: 'unlimitedStorage',
+        needle: /history|IndexedDB|quota/i,
+        evidence: /openDB\(|indexedDB/,
+      },
+    ];
+
+    // 提取 listing 第 6 节的权限理由表（英文，提交用）
+    const listingText = readListing();
+    const enSection = listingText.split(/^## 6\./m)[1]?.split(/^## 7\./m)[0] ?? '';
+    const reasons = new Map(
+      [...enSection.matchAll(/^\| `([a-zA-Z<>/_]+)` \| ([^|]+) \|/gm)].map((m) => [
+        m[1],
+        m[2].trim(),
+      ]),
+    );
+
+    for (const c of claims) {
+      const reason = reasons.get(c.perm);
+      if (reason == null) continue; // 该权限没在理由表里（另一个用例负责报错）
+      expect(c.needle.test(reason), `权限 "${c.perm}" 的理由没提它实际做的事：${reason}`).toBe(
+        true,
+      );
+      expect(
+        c.evidence.test(src),
+        `权限 "${c.perm}" 的理由声称了某项能力，但代码里找不到对应实现：${reason}`,
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * 反向：listing 的权限理由**不能**声称代码里不存在的能力。
+   *
+   * 上一条验「提到的是真的」，这条验「没提到的就不准吹」。
+   * 具体盯死一类吹法：说存了某项偏好，但 chrome.storage 里其实没有那个键。
+   */
+  /**
+   * 隐私政策里的 storage 描述也要和代码一致。
+   *
+   * CWS 会**逐条核对**隐私政策与实际行为 —— 政策写了但代码没做（或反过来），
+   * 是被拒的常见原因，比 listing 措辞不当更硬。
+   *
+   * D+4 夜间发现的同一处不准：政策写「Preferences (theme, default format)」，
+   * 但 chrome.storage 只存语言选择。
+   */
+  test('隐私政策里的 storage 描述与代码一致', () => {
+    const privacy = readFileSync(PRIVACY_PATH, 'utf8');
+    const i18n = readFileSync(resolve(ROOT, 'utils', 'i18n.ts'), 'utf8');
+    const themeSrc = readFileSync(resolve(ROOT, 'utils', 'theme.ts'), 'utf8');
+
+    // 政策里出现了哪些「被存储的偏好」
+    const claimsTheme = /主题/.test(privacy) || /\btheme\b/i.test(privacy);
+    const claimsFormat = /默认导出格式|默认格式|default (export )?format/i.test(privacy);
+
+    const storesTheme = /chrome\.storage\.local\.set\(\{[^}]*theme/i.test(i18n + themeSrc);
+    const storesFormat = /chrome\.storage\.local\.set\(\{[^}]*format/i.test(i18n + themeSrc);
+
+    expect(
+      claimsTheme ? storesTheme : true,
+      '隐私政策声称存储了主题，但代码里没有（主题跟随系统，不是持久化偏好）',
+    ).toBe(true);
+    expect(
+      claimsFormat ? storesFormat : true,
+      '隐私政策声称存储了默认导出格式，但代码里没有',
+    ).toBe(true);
+
+    // 政策必须提到语言（唯一真的被存的偏好）
+    expect(
+      /语言|language|locale/i.test(privacy),
+      '隐私政策没提界面语言选择 —— 而那才是实际被存储的东西',
+    ).toBe(true);
+  });
+
+  test('权限理由不能声称存储了实际没存的东西', () => {
+    const i18n = readFileSync(resolve(ROOT, 'utils', 'i18n.ts'), 'utf8');
+    const themeSrc = existsSync(resolve(ROOT, 'utils', 'theme.ts'))
+      ? readFileSync(resolve(ROOT, 'utils', 'theme.ts'), 'utf8')
+      : '';
+    const storageSrc = i18n + themeSrc;
+
+    // storage 确实被用来存东西（至少一处 set 调用）
+    expect(
+      /chrome\.storage\.local\.set\(/.test(i18n),
+      '代码里找不到 chrome.storage.local.set —— 这个检查方式失效了',
+    ).toBe(true);
+
+    const listingText = readListing();
+    const enSection = listingText.split(/^## 6\./m)[1]?.split(/^## 7\./m)[0] ?? '';
+    const storageRow = [...enSection.matchAll(/^\| `storage` \| ([^|]+) \|/gm)][0]?.[1] ?? '';
+
+    expect(storageRow, 'listing 第 6 节没找到 storage 的理由行').not.toBe('');
+
+    // 主题：必须真的有把主题写进 storage 的代码
+    // （主题本身存在，但它是跟随系统的 prefers-color-scheme，不是存下来的偏好）
+    if (/\btheme\b/i.test(storageRow) || /主题/.test(storageRow)) {
+      expect(
+        /chrome\.storage\.local\.set\(\{[^}]*theme/i.test(storageSrc),
+        '权限理由声称存储了主题，但代码里没有把主题存进 chrome.storage（主题跟随系统，不是持久化偏好）',
+      ).toBe(true);
+    }
+
+    // 默认导出格式：必须真的有把格式写进 storage 的代码
+    if (/default (export )?format/i.test(storageRow) || /默认导出格式/.test(storageRow)) {
+      expect(
+        /chrome\.storage\.local\.set\(\{[^}]*format/i.test(storageSrc),
+        '权限理由声称存储了默认导出格式，但代码里没有',
+      ).toBe(true);
+    }
+
+    // 反向：说存的是语言，就必须真有语言相关的 storage 键
+    if (/language|locale/i.test(storageRow) || /语言/.test(storageRow)) {
+      expect(
+        /shotly\.locale|locale/i.test(storageSrc) &&
+          /chrome\.storage\.local\.set\(/.test(storageSrc),
+        '权限理由声称存储语言选择，但代码里没有对应的 storage 键',
+      ).toBe(true);
     }
   });
 

@@ -125,7 +125,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 | `activeTab` | Access the current tab only when the user clicks the extension icon, to capture the page they are viewing. |
 | `scripting` | Inject the region-selection overlay into the active tab when the user starts a region capture. |
 | `offscreen` | Use an offscreen document with a canvas to stitch multi-screen captures into a single full-page image. Required because MV3 service workers have no DOM access. |
-| `storage` | Store user preferences (theme, default export format) locally via chrome.storage. |
+| `storage` | Store your language choice (auto / English / 中文) locally via chrome.storage, so it persists between popup opens. |
 | `downloads` | Save exported screenshots (PNG/JPG/PDF) to the user's disk when the user clicks Download. |
 | `clipboardWrite` | Copy the captured screenshot to the clipboard when the user clicks the Copy button. |
 | `unlimitedStorage` | Store up to 50 full-page screenshots in a local IndexedDB history library. Default quota (~100KB–10MB) is insufficient for high-resolution captures. |
@@ -223,7 +223,7 @@ Alt+Shift+S —— 截取整页
 | `activeTab` | 仅在用户点击扩展图标时访问当前标签页，用于截取用户正在看的页面。 |
 | `scripting` | 用户发起区域截图时，向当前标签页注入区域框选浮层。 |
 | `offscreen` | 使用离屏文档与 canvas 把多分屏截图拼接成一张整页图。MV3 的 Service Worker 访问不到 DOM，所以必须用离屏文档。 |
-| `storage` | 通过 chrome.storage 在本地保存用户偏好（主题、默认导出格式）。 |
+| `storage` | 通过 chrome.storage 在本地保存你的语言选择（自动 / English / 中文），下次打开 popup 仍然生效。 |
 | `downloads` | 用户点击「下载」时，把导出的截图（PNG/JPG/PDF）保存到本地磁盘。 |
 | `clipboardWrite` | 用户点击「复制」时，把截到的图写入卡贴板。 |
 | `unlimitedStorage` | 在本地 IndexedDB 历史库里保存最多 50 张整页截图。默认配额（约 100KB–10MB）装不下高分辨率长图。 |
