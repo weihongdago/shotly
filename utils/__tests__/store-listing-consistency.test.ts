@@ -629,4 +629,63 @@ describe('商店 listing ↔ 实现 一致性', () => {
       ).toBe(reason);
     }
   });
+
+  /**
+   * listing 里的**中文**权限表（第 9.4 节）也要和英文表（第 6 节）对齐。
+   *
+   * listing 有两张权限表：第 6 节英文（**实际提交进 CWS 后台的**），
+   * 第 9.4 节中文（参考用）。前面那条用例只锁了「英文表 ⟷ 提审手册」，
+   * **中文表没被任何用例覆盖** —— 两边漂了没人知道。
+   *
+   * 中文表本身也要过语义检查：理由写宽了（比如「存主题」而代码只存语言），
+   * 中文表里同样会被审核员看到（提交中文 locale 时用）。
+   */
+  test('listing 的中文权限表与英文表对齐，且语义同样成立', () => {
+    const listingText = readListing();
+    const enSection = listingText.split(/^## 6\./m)[1]?.split(/^## 7\./m)[0] ?? '';
+    const cnSection = listingText.split(/^### 9\.4/m)[1]?.split(/^## /m)[0] ?? '';
+    expect(cnSection.length, 'listing 第 9.4 节（中文权限表）没找到').toBeGreaterThan(100);
+
+    const rows = (text: string) =>
+      new Map(
+        [...text.matchAll(/^\| `([a-zA-Z<>/_]+)` \| ([^|]+) \|/gm)].map((m) => [
+          m[1],
+          m[2].trim(),
+        ]),
+      );
+
+    const enRows = rows(enSection);
+    const cnRows = rows(cnSection);
+
+    expect(cnRows.size, '第 9.4 节的权限表解析不出来').toBeGreaterThan(0);
+
+    // 权限集合必须完全一致（不多不少）
+    for (const perm of enRows.keys()) {
+      expect(cnRows.has(perm), `中文权限表缺权限 "${perm}"`).toBe(true);
+    }
+    for (const perm of cnRows.keys()) {
+      expect(enRows.has(perm), `中文权限表多了权限 "${perm}"（英文表里没有）`).toBe(true);
+    }
+
+    // 语义检查：中文理由不能声称存储了实际没存的东西
+    const i18n = readFileSync(resolve(ROOT, 'utils', 'i18n.ts'), 'utf8');
+    const themeSrc = readFileSync(resolve(ROOT, 'utils', 'theme.ts'), 'utf8');
+    const storageSrc = i18n + themeSrc;
+
+    const cnStorage = cnRows.get('storage') ?? '';
+    expect(cnStorage, '中文权限表缺 storage 的理由').not.toBe('');
+
+    if (/主题|theme/i.test(cnStorage)) {
+      expect(
+        /chrome\.storage\.local\.set\(\{[^}]*theme/i.test(storageSrc),
+        `中文权限表说 storage 存了主题，但代码里没有：${cnStorage}`,
+      ).toBe(true);
+    }
+    if (/默认导出格式|默认格式|default (export )?format/i.test(cnStorage)) {
+      expect(
+        /chrome\.storage\.local\.set\(\{[^}]*format/i.test(storageSrc),
+        `中文权限表说 storage 存了默认导出格式，但代码里没有：${cnStorage}`,
+      ).toBe(true);
+    }
+  });
 });
