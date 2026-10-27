@@ -124,11 +124,11 @@ shotly/
 | `activeTab` | Inject content script on user click only — no pre-injection |
 | `scripting` | Programmatic injection for precise timing |
 | `offscreen` | MV3 SW cannot use DOM; offscreen doc is the official workaround |
-| `storage` | User preferences (chrome.storage) |
-| `downloads` | Default export method |
-| `clipboardWrite` | F4 P0: copy screenshot to clipboard (navigator.clipboard.write) |
+| `storage` | Save the interface language choice (chrome.storage) |
+| `downloads` | Save the exported PNG/JPG/PDF to the user's disk when they click Download |
+| `clipboardWrite` | Copy the screenshot to the clipboard (navigator.clipboard.write) |
 | `unlimitedStorage` | IndexedDB quota exceeds default 100KB — 50 screenshot history needs ~50MB |
-| `tabs` | Alt+Shift+S shortcut → tabs.query → captureVisibleTab |
+| `tabs` | Read the current tab's title and URL to label local history entries |
 | `<all_urls>` (host) | Screenshot extension — must reach any user page |
 
 ## Privacy
@@ -136,7 +136,7 @@ shotly/
 **Screenshots never leave the device.** No accounts, no telemetry SDKs, no analytics, no third-party requests.
 
 - Screenshot images + metadata → local IndexedDB (max 50, LRU eviction)
-- Preferences → `chrome.storage`
+- Interface language choice → `chrome.storage`
 - Uninstall → Chrome removes all of it
 
 Full policy (bilingual, CWS-ready): [`PRIVACY.md`](./PRIVACY.md).

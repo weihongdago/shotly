@@ -25,6 +25,7 @@ const WXT_CONFIG = resolve(ROOT, 'wxt.config.ts');
 const BACKGROUND = resolve(ROOT, 'entrypoints', 'background.ts');
 const MANIFEST = resolve(ROOT, '.output', 'chrome-mv3', 'manifest.json');
 const RUNBOOK = resolve(ROOT, 'store-assets', 'SUBMIT-RUNBOOK.md');
+const README_PATH = resolve(ROOT, 'README.md');
 
 /**
  * 有些检查必须读**真实构建产物**（.output/chrome-mv3/）。
@@ -455,6 +456,64 @@ describe('商店 listing ↔ 实现 一致性', () => {
       unsupported,
       `listing 声称支持 ${unsupported.join(' / ')}，但这些浏览器上扩展跑不起来`,
     ).toEqual([]);
+  });
+
+  /**
+   * README 的权限理由表也不能漂。
+   *
+   * README 是公开仓库首页 —— 审核员、用户、以后维护的人都会看它。
+   * 它和 listing 是两份副本，改一处另一处不会跟着变。
+   *
+   * D+4 深夜发现 README 的 `tabs` 行写的是
+   *   「Alt+Shift+S shortcut → tabs.query → captureVisibleTab」
+   * 但 `tabs` 权限实际是**读 tab.title / tab.url 给历史条目命名**；
+   * 快捷键那条路径靠的是 `activeTab`。理由写错了权限就等于给了
+   * 一个「为什么要这个权限」的错误答案。
+   */
+  test('README 的权限理由表覆盖全部权限，且不声称不存在的用途', () => {
+    const readme = readFileSync(README_PATH, 'utf8');
+
+    // 提取 README 的权限表
+    const section = readme.split('### Permission rationale')[1]?.split('\n## ')[0] ?? '';
+    const rows = new Map(
+      [...section.matchAll(/^\| `([a-zA-Z<>/_]+)`(?: \((host)\))? \| ([^|]+) \|/gm)].map((m) => [
+        m[1],
+        m[3].trim(),
+      ]),
+    );
+    expect(rows.size, 'README 的权限理由表解析不出来').toBeGreaterThan(0);
+
+    const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as {
+      permissions?: string[];
+      host_permissions?: string[];
+    };
+    const declared = [...(manifest.permissions ?? []), ...(manifest.host_permissions ?? [])];
+
+    for (const p of declared) {
+      expect(rows.has(p), `README 的权限表缺 "${p}"`).toBe(true);
+    }
+
+    // README 里的 storage 理由不能声称存了主题 / 默认格式
+    const storageReason = rows.get('storage') ?? '';
+    expect(
+      /\btheme\b|主题/i.test(storageReason),
+      `README 说 storage 存主题，但主题跟随系统、不是持久化偏好：「${storageReason}」`,
+    ).toBe(false);
+    expect(
+      /default (export )?format/i.test(storageReason),
+      `README 说 storage 存默认导出格式，但代码里没存：「${storageReason}」`,
+    ).toBe(false);
+
+    // tabs 的理由必须是「读标题和 URL」，不能是快捷键（那是 activeTab 的活）
+    const tabsReason = rows.get('tabs') ?? '';
+    expect(
+      /title|url/i.test(tabsReason),
+      `README 的 tabs 理由没说清楚是读标题/URL：「${tabsReason}」`,
+    ).toBe(true);
+    expect(
+      !/shortcut|快捷键/i.test(tabsReason),
+      `README 把 tabs 理由写成快捷键 —— 快捷键靠的是 activeTab：「${tabsReason}」`,
+    ).toBe(true);
   });
 
   test('提审手册的权限理由表与 listing 第 6 节完全一致', () => {
