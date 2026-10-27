@@ -40,11 +40,15 @@ jobs:
       - name: Type-check
         run: pnpm compile
 
-      - name: Unit tests
-        run: pnpm test
-
+      # ⚠️ build 必须在 test 之前 ——
+      #    守门测试（store-listing-consistency）要读 .output/chrome-mv3/ 的
+      #    真实构建产物：查 manifest 权限、扫第三方网络请求。
+      #    顺序反了这两条检查在 CI 里会静默跳过。
       - name: Build (chrome-mv3)
         run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test
 
       - name: Build (firefox-mv2)
         run: pnpm build:firefox

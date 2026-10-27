@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background: linear-gradient(135deg, #0F172A 0%, #134E4A 55%, #0D9488 100%);
+    color: #fff;
+    overflow: hidden;
+  }
+  .wrap {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8% 9%;
+    position: relative;
+  }
+  .glow {
+    position: absolute;
+    width: 46vw; height: 46vw;
+    right: -10vw; top: -14vw;
+    background: radial-gradient(circle, rgba(45,212,191,.30) 0%, rgba(45,212,191,0) 70%);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 22px; font-weight: 700; letter-spacing: .01em;
+    margin-bottom: 22px;
+    position: relative;
+  }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px;
+    background: #2DD4BF;
+    display: grid; place-items: center;
+    font-size: 24px;
+  }
+  h1 {
+    font-size: 76px; line-height: 1.06; font-weight: 800;
+    letter-spacing: -.025em;
+    position: relative;
+    max-width: 14ch;
+  }
+  h1 em { font-style: normal; color: #5EEAD4; }
+  .sub {
+    margin-top: 22px;
+    font-size: 27px; line-height: 1.42;
+    color: #CCFBF1;
+    max-width: 30ch;
+    position: relative;
+    font-weight: 400;
+  }
+  .feats {
+    margin-top: 40px;
+    display: flex; gap: 14px; flex-wrap: wrap;
+    position: relative;
+  }
+  .chip {
+    padding: 11px 20px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.10);
+    border: 1px solid rgba(255,255,255,.20);
+    font-size: 20px;
+    font-weight: 500;
+    backdrop-filter: blur(6px);
+  }
+  .foot {
+    position: absolute; bottom: 7%; left: 9%;
+    font-size: 19px; color: #99F6E4; font-weight: 500;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5EEAD4; }
+  .shot {
+    position: absolute;
+    right: 7%; bottom: -6%;
+    width: 44%;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.22);
+    box-shadow: 0 40px 90px rgba(0,0,0,.45);
+    background: #fff;
+    overflow: hidden;
+  }
+  .shot .bar {
+    height: 34px; background: #F1F5F9; display: flex; align-items: center;
+    gap: 6px; padding: 0 12px;
+  }
+  .shot .bar i { width: 9px; height: 9px; border-radius: 50%; background: #CBD5E1; display: block; }
+  .shot .page { padding: 18px; }
+  .shot .line { height: 11px; border-radius: 5px; background: #E2E8F0; margin-bottom: 11px; }
+  .shot .line.w1 { width: 62%; background: #2DD4BF; height: 15px; }
+  .shot .line.w2 { width: 88%; }
+  .shot .line.w3 { width: 74%; }
+  .shot .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 15px; }
+  .shot .box { height: 62px; border-radius: 9px; background: #F1F5F9; }
+  .shot .box.a { background: #CCFBF1; }
+  .shot .box.b { background: #E0F2FE; }
+  .shot .box.c { background: #FEF3C7; }
+  .shot .box.d { background: #FCE7F3; }
+
+  /* Small promo (440x280) — the desktop layout relies on a large mockup that
+     overflows at this size, so scale everything down and drop the mockup. */
+  @media (max-width: 700px) {
+    .wrap { padding: 5.5% 7%; }
+    .brand { gap: 8px; font-size: 11px; margin-bottom: 8px; }
+    .logo { width: 22px; height: 22px; border-radius: 6px; font-size: 12px; }
+    h1 { font-size: 27px; max-width: 18ch; }
+    .sub { margin-top: 9px; font-size: 11.5px; line-height: 1.35; max-width: 40ch; }
+    .feats { margin-top: 11px; gap: 5px; }
+    .chip { padding: 4px 8px; font-size: 9.5px; }
+    /* Footer becomes a normal flow item on small sizes — absolutely
+       positioned it collides with the chip row. */
+    .foot {
+      position: static;
+      margin-top: 10px;
+      font-size: 10px;
+    }
+    .shot { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="wrap">
+    <div class="brand"><span class="logo">📸</span> Shotly</div>
+    <h1>Capture the <em>whole page</em>, not the viewport.</h1>
+    <div class="sub">Full-page screenshots that stay on your device. No account, no upload, no tracking.</div>
+    <div class="feats">
+      <span class="chip">🖼️ Full page</span>
+      <span class="chip">▭ Region</span>
+      <span class="chip">🖨️ PNG / JPG / PDF</span>
+      <span class="chip">📋 Clipboard</span>
+      <span class="chip">🔒 100% local</span>
+    </div>
+    <div class="foot"><span class="dot"></span> Free &amp; open — Chrome Web Store</div>
+    <div class="shot">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <div class="page">
+        <div class="line w1"></div>
+        <div class="line w2"></div>
+        <div class="line w3"></div>
+        <div class="grid">
+          <div class="box a"></div><div class="box b"></div>
+          <div class="box c"></div><div class="box d"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
