@@ -140,7 +140,9 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 ## 8. 提审前检查清单
 
 - [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（196/196）
-- [x] `pnpm zip` 产出包已验证（`.output/shotly-0.1.0-chrome.zip`，230 KB，含 `_locales/`）—— 上传时用这个
+- [x] `pnpm zip` 产出包已验证（`.output/shotly-0.1.0-chrome.zip`，230 KB，16 个文件，含 `_locales/`）
+- [x] **打包产物本身**已测（`playwright-packaged-zip.spec.ts`：从 zip 解压出来装进 Chrome 跑真实截图）
+- [x] CI 直接产出可提审的 zip artifact（`shotly-chrome-zip`）—— 提审时直接下，不用本地重新打包
 - [x] manifest 权限与第 6 节完全一致（不多不少，有测试锁住）
 - [x] manifest 有 `default_locale: 'en'` + `_locales/en` `_locales/zh_CN` 齐备
 - [x] 隐私政策 URL 可公开访问（https://weihongdago.github.io/shotly/privacy.html）
