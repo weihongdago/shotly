@@ -24,7 +24,7 @@
 <tbody>
 <tr><td>截图图片 (Blob)</td><td>浏览器 IndexedDB (本地)</td><td>最多 50 条，超出自动淘汰最旧一条</td></tr>
 <tr><td>截图元数据（来源 URL / 标题 / 尺寸 / 时间）</td><td>同上，与图片一起</td><td>同上</td></tr>
-<tr><td>用户偏好（主题、格式等）</td><td><code>chrome.storage</code> (本地)</td><td>永久，直到你卸载扩展</td></tr>
+<tr><td>用户偏好（界面语言选择）</td><td><code>chrome.storage</code> (本地)</td><td>永久，直到你卸载扩展</td></tr>
 </tbody>
 </table>
 <p><strong>来源 URL 与页面标题仅用于给你自己生成文件名和历史列表，不会离开设备。</strong></p>
@@ -35,7 +35,7 @@
 <tr><td><code>activeTab</code></td><td>在你点击扩展时读取当前页面</td><td>只有你主动触发时才作用于当前标签页</td></tr>
 <tr><td><code>scripting</code></td><td>注入选区脚本</td><td>区域截图需要</td></tr>
 <tr><td><code>offscreen</code></td><td>离屏画布拼接长图</td><td>MV3 后台无法访问 DOM</td></tr>
-<tr><td><code>storage</code></td><td>保存偏好设置</td><td>主题 / 默认导出格式</td></tr>
+<tr><td><code>storage</code></td><td>保存界面语言选择</td><td>选「自动 / English / 中文」后下次打开仍生效</td></tr>
 <tr><td><code>downloads</code></td><td>保存截图到本地磁盘</td><td>你的导出操作</td></tr>
 <tr><td><code>clipboardWrite</code></td><td>复制截图到剪贴板</td><td>你的复制操作</td></tr>
 <tr><td><code>unlimitedStorage</code></td><td>扩展 IndexedDB 容量</td><td>50 条长截图可能超过默认配额</td></tr>
@@ -65,7 +65,7 @@
 <tbody>
 <tr><td>Screenshot images (Blob)</td><td>Browser IndexedDB (local)</td><td>Up to 50 entries; oldest is evicted automatically</td></tr>
 <tr><td>Screenshot metadata (source URL / title / dimensions / timestamp)</td><td>Same store, alongside the image</td><td>Same</td></tr>
-<tr><td>Preferences (theme, default format)</td><td><code>chrome.storage</code> (local)</td><td>Until you uninstall</td></tr>
+<tr><td>Preferences (interface language choice)</td><td><code>chrome.storage</code> (local)</td><td>Until you uninstall</td></tr>
 </tbody>
 </table>
 <p><strong>The source URL and page title are used only to generate local filenames and history entries. They never leave your device.</strong></p>
@@ -76,7 +76,7 @@
 <tr><td><code>activeTab</code></td><td>Read the current page only when you trigger the extension</td></tr>
 <tr><td><code>scripting</code></td><td>Inject the region-selection script</td></tr>
 <tr><td><code>offscreen</code></td><td>Offscreen canvas for stitching long images (MV3 workers have no DOM)</td></tr>
-<tr><td><code>storage</code></td><td>Save preferences</td></tr>
+<tr><td><code>storage</code></td><td>Save your interface language choice</td></tr>
 <tr><td><code>downloads</code></td><td>Save screenshots to your disk when you ask</td></tr>
 <tr><td><code>clipboardWrite</code></td><td>Copy a screenshot to your clipboard when you ask</td></tr>
 <tr><td><code>unlimitedStorage</code></td><td>Expand IndexedDB quota so 50 long screenshots fit</td></tr>
