@@ -1,5 +1,21 @@
 # Shotly 测试方案 v1｜D+1 首版（小白代笔 / 测试工程师后续校对）
 
+> ## ⚠️ 历史测试方案 —— 不是 v1.0 的实际实现（2026-10-28 标注）
+>
+> 本文是 **2026-07-11 的测试计划稿**，描述的是**当时的计划**。
+> 实际执行的测试在 `test-infra/e2e/`（Playwright，真实 Chrome）。
+> 几处与现状不符：
+>
+> | 本文写的 | v1.0 实际 |
+> |---|---|
+> | §8.2 验证「除 CWS 评分埋点外无上传」 | **无任何埋点**，包括 CWS 评分在内的第三方请求为零 |
+> | §8.3 性能监控埋点（`shotly:perf` 事件） | **未实现**。代码里没有这个事件 |
+> | §8.1 `method: 'A' / 'B'` + `attempts` 字段 | `capture-fallback.ts` 未接入生产路径，实际无 A/B 重试 |
+> | 状态栏「补 4 语种隐私」 | v1.0 只有 2 语种（en / zh_CN） |
+>
+> 隐私相关的**实际验证**在 `test-infra/e2e/playwright-privacy-no-network.spec.ts`：
+> 跑完整截图流程，拦截全部网络请求，断言零第三方请求。
+
 > **版本**：v1.0 D+1 首版｜**日期**：2026-07-11｜**作者**：小白（dispatcher 代笔，因 M3 provider 超时）
 > **状态**：⏳ 测试工程师 24h 内校对 + 补 4 语种隐私 + 合规清单
 > **配套文档**：[PRD-v1.md](./PRD-v1.md) / [architecture.md](./architecture.md) / [ui-style-guide-v1.md](./ui-style-guide-v1.md)

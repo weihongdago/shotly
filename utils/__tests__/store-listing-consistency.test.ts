@@ -516,6 +516,81 @@ describe('商店 listing ↔ 实现 一致性', () => {
     ).toBe(true);
   });
 
+  /**
+   * 历史设计文档不能和已发布的隐私承诺矛盾。
+   *
+   * `docs/architecture.md` 和 `docs/test-plan-v1.md` 是 2026-07-11 的**设计稿**，
+   * 里面描述了事件级埋点 → Cloudflare D1、Lemon Squeezy 支付、4 语种隐私政策、
+   * editor.html —— 这些 **v1.0 全部没实现**。
+   *
+   * 为什么这是真问题：仓库是**公开的**，README 和商店 listing 都链接它。
+   * 审核员（或任何一个读源码的人）看到架构文档里写着
+   * 「埋点上报 / 90 天保留 / 匿名 ID」，而 README 写着「零第三方请求」——
+   * 这两个说法不可能同时为真。轻则被质疑，重则被当成虚假承诺。
+   *
+   * 所以要求：任何描述埋点/上传/支付的文档，**顶部必须挂「历史文档」标注**，
+   * 并明确说明这些没实现。
+   */
+  test('历史设计文档必须挂「未实现」标注，且不得声称与实际隐私承诺一致', () => {
+    const shippedPromise = /no telemetry|no analytics|zero requests|什么都不收集|不追踪/i;
+
+    const docs = [
+      { path: resolve(ROOT, 'docs', 'architecture.md'), label: 'docs/architecture.md' },
+      { path: resolve(ROOT, 'docs', 'test-plan-v1.md'), label: 'docs/test-plan-v1.md' },
+    ];
+
+    // 这些词一旦出现，说明文档在描述「埋点/上传/支付」计划
+    const riskyPatterns = /埋点|telemetry:|Cloudflare D1|Lemon Squeezy|anonId|匿名 ID/i;
+
+    for (const d of docs) {
+      if (!existsSync(d.path)) continue;
+      const text = readFileSync(d.path, 'utf8');
+
+      const risky = riskyPatterns.test(text);
+      if (!risky) continue;
+
+      // 有风险内容 → 顶部必须有历史标注
+      const head = text.slice(0, 2000);
+      expect(
+        /历史(设计|测试)文档|不是 v1\.0 的实际实现/.test(head),
+        `${d.label} 里描述了埋点/上传/支付，但顶部没有「历史文档 · 未实现」标注 —— ` +
+          '读者会以为那是实际行为，和 README 的「零第三方请求」直接矛盾',
+      ).toBe(true);
+
+      // 标注里必须点明「未实现」
+      expect(
+        /未实现|没实现|不存在/.test(head),
+        `${d.label} 的历史标注里没说明哪些内容未实现`,
+      ).toBe(true);
+    }
+
+    // 公开的现状文档必须**不含**这些词（否则就是真的对外承诺了）
+    const publicDocs = [
+      { path: README_PATH, label: 'README.md' },
+      { path: PRIVACY_PATH, label: 'PRIVACY.md' },
+      { path: LISTING_PATH, label: 'CWS-listing.md' },
+    ];
+    for (const d of publicDocs) {
+      const text = readFileSync(d.path, 'utf8');
+      // 允许「不做埋点」这种否定式表述，只禁「我们要埋点」这种肯定式
+      const affirmative = [
+        /埋点上报|上报埋点|telemetry:event|Cloudflare D1|Lemon Squeezy/i,
+      ];
+      for (const re of affirmative) {
+        expect(
+          re.test(text),
+          `${d.label} 出现了「${re.source}」—— 这是在对外承诺埋点/上传/支付，` +
+            '而 v1.0 根本没有这些',
+        ).toBe(false);
+      }
+      // 而且必须真的声明了隐私承诺
+      expect(
+        shippedPromise.test(text),
+        `${d.label} 缺少明确的隐私承诺（no telemetry / 什么都不收集）`,
+      ).toBe(true);
+    }
+  });
+
   test('提审手册的权限理由表与 listing 第 6 节完全一致', () => {
     // 提审手册（SUBMIT-RUNBOOK.md）是给「$5 到账后照着填」用，
     // 里面抄了一份权限理由表。两份一旦漂移，审核时照着填的就是旧文案

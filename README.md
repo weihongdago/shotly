@@ -17,7 +17,7 @@
 
 **D+4 — 2026-10-27**: v1.0 feature set is feature-complete and verified in a real browser.
 
-- ✅ **D+1**: WXT scaffold + architecture v1.2 patches, 8-permission manifest, long-port messaging (20s heartbeat), iframe placeholders, retry→fallback, dark mode tokens, offscreen stitch skeleton
+- ✅ **D+1**: WXT scaffold + architecture v1.2 patches, 9-permission manifest, long-port messaging (20s heartbeat), iframe placeholders, retry→fallback helper, dark mode tokens, offscreen stitch skeleton
 - ✅ **D+2** (`0b3397c`): full-page capture pipeline — bg port registry + SW double-eval guard + sender-key dedupe, offscreen lifecycle, `captureVisibleTab` round-trip, OffscreenCanvas stitching, popup UI with progress, PoC-D3 scenarios
 - ✅ **D+3**: export formats (PNG/JPG/PDF via offscreen + pdf-lib), IndexedDB history store (50-entry LRU), region capture (rectangle drag-select), CI workflow, privacy policy
 - ✅ **D+4**: device-pixel (Retina-correct) stitching, URL-origin based cross-origin iframe detection, `waitForPaint()` (iframe *loaded* ≠ *painted*), Chrome Web Store listing assets, **8/8 PoC-D3 scenarios green in a real Chrome**
@@ -100,7 +100,7 @@ shotly/
 │   └── popup/                 # toolbar popup (Vue 3, brand-styled)
 ├── utils/
 │   ├── messaging.ts           # Envelope types, openPort(), requestOverPort(), CAPTURE_MSG/EXPORT_MSG
-│   ├── capture-fallback.ts    # plan A → retry 3x → plan B
+│   ├── capture-fallback.ts    # plan A → retry 3x → plan B（⚠️ 未接入生产路径，见下）
 │   ├── iframe-placeholder.ts  # cross-origin iframe replacement
 │   ├── screenshot-engine.ts   # planCapture, runScrollAndCapture, stitchChunks
 │   ├── region-selector.ts     # rectangle drag-select overlay (D+3)
@@ -112,10 +112,17 @@ shotly/
 ├── docs/                      # architecture, test plan, UI style guide
 ├── poc-d3/                    # 5 verification scenarios + fixtures + expected results
 ├── PRIVACY.md                 # privacy policy (bilingual, CWS-ready)
-├── wxt.config.ts              # WXT config + 8-permission manifest
+├── wxt.config.ts              # WXT config + manifest（8 permissions + 1 host permission）
 ├── vitest.config.ts
 └── package.json
 ```
+
+
+> ⚠️ **`utils/capture-fallback.ts` 未接入生产路径。**
+> 它实现了「plan A 失败重试 3 次 → 回退 plan B」，但没有任何生产代码 import 它
+> （构建产物里也不含它）。v1.0 的实际行为是：截图失败**直接报错**，
+> 没有 A/B 回退。文档里描述的重试逻辑是**为将来准备的**，不是现状。
+> 详见 `docs/architecture.md` 顶部「历史设计文档」标注。
 
 ### Permission rationale (architecture §4.2)
 
