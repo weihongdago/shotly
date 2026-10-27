@@ -47,6 +47,14 @@ jobs:
       - name: Build (chrome-mv3)
         run: pnpm build
 
+      # ⚠️ build-pages 必须在 test **之前** ——
+      #    站点守门测试（site-pages.test.ts）检查的是**生成出来的**
+      #    dist-pages/，也就是真正发布到 GitHub Pages 的东西。
+      #    不先构建，这条检查在 CI 里会直接报错（这是故意的：
+      #    静默跳过比硬失败危险）。
+      - name: Build pages (dist-pages)
+        run: node tools/build-pages.mjs
+
       - name: Unit tests
         run: pnpm test
 

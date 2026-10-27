@@ -15,7 +15,7 @@
  * 不是源码 —— 源码对了但生成逻辑坏了的情况照样会漏。
  */
 
-import { test, expect, describe, beforeAll } from 'vitest';
+import { test, expect, describe } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -29,24 +29,31 @@ function readDist(file: string): string {
   return readFileSync(resolve(DIST, file), 'utf8');
 }
 
-/** dist-pages 没构建出来时，本地跳过（没跑 build-pages 就不该卡住单测）。 */
-function requireDist(): boolean {
-  if (existsSync(resolve(DIST, 'index.html'))) return true;
-  if (process.env.CI) {
-    expect(
-      false,
-      'CI 里缺少 dist-pages/ —— 站点没构建，检查会静默失效（先跑 node tools/build-pages.mjs）',
-    ).toBe(true);
-  } else {
-    console.warn('[site-guard] 没找到 dist-pages/，跳过站点检查（CI 里会报错）');
-  }
-  return false;
+/**
+ * dist-pages 没构建出来时的处理。
+ *
+ * - CI 里：**硬失败**。站点没构建 = 检查形同虚设，而看上去还是绿的。
+ *   CI workflow 里 build-pages 排在 test 之前，所以产物一定在。
+ * - 本地：跳过（没跑 build-pages 就不该卡住单测）。
+ */
+const DIST_READY = existsSync(resolve(DIST, 'index.html'));
+
+if (!DIST_READY && process.env.CI) {
+  expect(
+    false,
+    'CI 里缺少 dist-pages/ —— 站点没构建，检查会静默失效（先跑 node tools/build-pages.mjs）',
+  ).toBe(true);
+}
+if (!DIST_READY) {
+  console.warn('[site-guard] 没找到 dist-pages/，跳过站点检查（CI 里会报错）');
 }
 
-describe('公开站点（GitHub Pages）', () => {
-  beforeAll(() => {
-    if (!requireDist()) test.skip(true, 'dist-pages/ 未构建');
-  });
+/**
+ * `describe.skipIf` 而不是 `beforeAll` + `test.skip()` ——
+ * vitest 2.x 的 `test.skip()` 只接受 (name, fn)，传布尔值是类型错误。
+ * 整个 suite 跳过才是这里想要的语义。
+ */
+describe.skipIf(!DIST_READY)('公开站点（GitHub Pages）', () => {
 
   test('三个 CWS 必填/常用 URL 都有对应的页面', () => {
     for (const f of ['index.html', 'privacy.html', 'support.html']) {
