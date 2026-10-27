@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shotly — whole-page screenshots for Chrome, on-device only</title>
+<meta name="description" content="Shotly captures whole-page screenshots in Chrome, stitches them at full device resolution, and never sends anything off your machine." />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<main>
+<p class="eyebrow">Chrome extension</p>
+<h1>Shotly</h1>
+<p class="lede">Whole-page screenshots for Chrome — stitched at full device resolution, exported as PNG / JPG / PDF, and never uploaded anywhere.</p>
+
+<div class="cta">
+  <a class="btn primary" href="https://github.com/weihongdago/shotly">View source on GitHub</a>
+  <a class="btn" href="./privacy.html">Privacy policy</a>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3>Retina-correct</h3>
+    <p>The stitch canvas is sized in <strong>device</strong> pixels, so a 1280&nbsp;px page on a 2× display exports a 2560&nbsp;px image — never a downsampled one.</p>
+  </div>
+  <div class="card">
+    <h3>Private by construction</h3>
+    <p>No accounts, no telemetry, no third-party requests. Screenshots live in your browser's IndexedDB and nowhere else.</p>
+  </div>
+  <div class="card">
+    <h3>Handles the hard pages</h3>
+    <p>Lazy images, fixed headers, cross-origin embeds, web fonts and 50&nbsp;000&nbsp;px documents — all covered by five verified scenarios.</p>
+  </div>
+</div>
+
+<h2>What it does</h2>
+<ul>
+  <li>Whole-page capture with a live progress bar</li>
+  <li>Region capture — drag a rectangle, get just that</li>
+  <li>Export to PNG, JPG or PDF (and copy straight to the clipboard)</li>
+  <li>Local history (50 entries, LRU) so you can re-download yesterday's shot</li>
+  <li>Light and dark UI</li>
+</ul>
+
+<h2>Install</h2>
+<pre><code>git clone https://github.com/weihongdago/shotly.git
+cd shotly
+pnpm install
+pnpm build      # → .output/chrome-mv3
+pnpm zip        # → .output/shotly-0.1.0-chrome.zip</code></pre>
+<p>Then load it: <code>chrome://extensions/</code> → enable <strong>Developer mode</strong> → <strong>Load unpacked</strong> → pick <code>shotly/.output/chrome-mv3</code>.</p>
+
+<h2>Permissions, and why</h2>
+<table>
+  <tr><th>Permission</th><th>Why it is needed</th></tr>
+  <tr><td><code>activeTab</code></td><td>Reads the current tab only when you click the extension</td></tr>
+  <tr><td><code>scripting</code></td><td>Injects the region-selection overlay on demand</td></tr>
+  <tr><td><code>offscreen</code></td><td>Offscreen canvas — an MV3 service worker cannot use the DOM</td></tr>
+  <tr><td><code>storage</code></td><td>Your preferences (theme, default format)</td></tr>
+  <tr><td><code>downloads</code></td><td>Saves the file you export</td></tr>
+  <tr><td><code>clipboardWrite</code></td><td>Copy-to-clipboard</td></tr>
+  <tr><td><code>unlimitedStorage</code></td><td>The 50-entry history exceeds the default quota</td></tr>
+  <tr><td><code>tabs</code></td><td>Reads the current tab's title and URL for the local history entry</td></tr>
+  <tr><td><code>&lt;all_urls&gt;</code></td><td>A screenshot tool has to be able to reach any page you ask it to</td></tr>
+</table>
+
+<footer>
+  <p>Source: <a href="https://github.com/weihongdago/shotly">https://github.com/weihongdago/shotly</a> · <a href="./privacy.html">Privacy policy</a> · v0.1.0</p>
+</footer>
+</main>
+</body>
+</html>

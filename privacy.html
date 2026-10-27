@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shotly — Privacy Policy</title>
+<meta name="description" content="Shotly never uploads your screenshots. Everything stays on your device." />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<main>
+<h1>Shotly 隐私政策 / Privacy Policy</h1>
+<p><strong>最后更新 / Last updated:</strong> 2026-10-25 <strong>适用版本 / Applies to:</strong> Shotly v1.0 (Chrome extension)</p>
+<hr />
+<h2>中文</h2>
+<h3>一句话总结</h3>
+<p><strong>Shotly 不会把你的截图上传到任何服务器。所有截图只存在于你自己的设备上。</strong></p>
+<h3>1. 我们收集什么</h3>
+<p><strong>什么都不收集。</strong></p>
+<p>Shotly 没有账号体系，没有埋点 SDK，没有分析服务，没有广告。 扩展不会向任何第三方服务器发送请求。</p>
+<h3>2. 截图数据存在哪</h3>
+<table>
+<thead><tr><th>数据</th><th>存储位置</th><th>保留时间</th></tr></thead>
+<tbody>
+<tr><td>截图图片 (Blob)</td><td>浏览器 IndexedDB (本地)</td><td>最多 50 条，超出自动淘汰最旧一条</td></tr>
+<tr><td>截图元数据（来源 URL / 标题 / 尺寸 / 时间）</td><td>同上，与图片一起</td><td>同上</td></tr>
+<tr><td>用户偏好（主题、格式等）</td><td><code>chrome.storage</code> (本地)</td><td>永久，直到你卸载扩展</td></tr>
+</tbody>
+</table>
+<p><strong>来源 URL 与页面标题仅用于给你自己生成文件名和历史列表，不会离开设备。</strong></p>
+<h3>3. 权限说明</h3>
+<table>
+<thead><tr><th>权限</th><th>用途</th><th>为什么必需</th></tr></thead>
+<tbody>
+<tr><td><code>activeTab</code></td><td>在你点击扩展时读取当前页面</td><td>只有你主动触发时才作用于当前标签页</td></tr>
+<tr><td><code>scripting</code></td><td>注入选区脚本</td><td>区域截图需要</td></tr>
+<tr><td><code>offscreen</code></td><td>离屏画布拼接长图</td><td>MV3 后台无法访问 DOM</td></tr>
+<tr><td><code>storage</code></td><td>保存偏好设置</td><td>主题 / 默认导出格式</td></tr>
+<tr><td><code>downloads</code></td><td>保存截图到本地磁盘</td><td>你的导出操作</td></tr>
+<tr><td><code>clipboardWrite</code></td><td>复制截图到剪贴板</td><td>你的复制操作</td></tr>
+<tr><td><code>unlimitedStorage</code></td><td>扩展 IndexedDB 容量</td><td>50 条长截图可能超过默认配额</td></tr>
+<tr><td><code>tabs</code></td><td>读取当前标签页标题与 URL</td><td>生成本地历史条目标题</td></tr>
+<tr><td><code>&lt;all_urls&gt;</code> 主机权限</td><td>在任意网页上执行整页截图</td><td>这是截图工具的核心能力</td></tr>
+</tbody>
+</table>
+<h3>4. 卸载即删除</h3>
+<p>卸载扩展后，扩展的 IndexedDB、<code>chrome.storage</code> 数据会由 Chrome 自动清除，不留残留。</p>
+<h3>5. 第三方服务</h3>
+<p><strong>没有。</strong> 不使用 Google Analytics、Mixpanel、Amplitude、Segment、Sentry 或任何形式的遥测。</p>
+<p>唯一的例外是 Chrome Web Store 的付费升级（v1.1 计划中），届时会由 Google 处理的支付流程，但支付信息不会经过 Shotly。</p>
+<h3>6. 儿童隐私</h3>
+<p>Shotly 不收集任何个人信息，因此不涉及儿童数据。</p>
+<h3>7. 联系方式</h3>
+<p>问题或顾虑：<code>privacy@getshotly.com</code></p>
+<hr />
+<h2>English</h2>
+<h3>One-line summary</h3>
+<p><strong>Shotly never uploads your screenshots to any server. Everything stays on your device.</strong></p>
+<h3>1. What we collect</h3>
+<p><strong>Nothing.</strong></p>
+<p>Shotly has no accounts, no telemetry SDKs, no analytics services, and no ads. The extension makes no requests to third-party servers.</p>
+<h3>2. Where your data lives</h3>
+<table>
+<thead><tr><th>Data</th><th>Location</th><th>Retention</th></tr></thead>
+<tbody>
+<tr><td>Screenshot images (Blob)</td><td>Browser IndexedDB (local)</td><td>Up to 50 entries; oldest is evicted automatically</td></tr>
+<tr><td>Screenshot metadata (source URL / title / dimensions / timestamp)</td><td>Same store, alongside the image</td><td>Same</td></tr>
+<tr><td>Preferences (theme, default format)</td><td><code>chrome.storage</code> (local)</td><td>Until you uninstall</td></tr>
+</tbody>
+</table>
+<p><strong>The source URL and page title are used only to generate local filenames and history entries. They never leave your device.</strong></p>
+<h3>3. Permissions explained</h3>
+<table>
+<thead><tr><th>Permission</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>activeTab</code></td><td>Read the current page only when you trigger the extension</td></tr>
+<tr><td><code>scripting</code></td><td>Inject the region-selection script</td></tr>
+<tr><td><code>offscreen</code></td><td>Offscreen canvas for stitching long images (MV3 workers have no DOM)</td></tr>
+<tr><td><code>storage</code></td><td>Save preferences</td></tr>
+<tr><td><code>downloads</code></td><td>Save screenshots to your disk when you ask</td></tr>
+<tr><td><code>clipboardWrite</code></td><td>Copy a screenshot to your clipboard when you ask</td></tr>
+<tr><td><code>unlimitedStorage</code></td><td>Expand IndexedDB quota so 50 long screenshots fit</td></tr>
+<tr><td><code>tabs</code></td><td>Read the current tab's title/URL for local history labels</td></tr>
+<tr><td><code>&lt;all_urls&gt;</code></td><td>Capture any page — this is the core capability of a screenshot tool</td></tr>
+</tbody>
+</table>
+<h3>4. Uninstall deletes everything</h3>
+<p>When you uninstall the extension, Chrome removes its IndexedDB and <code>chrome.storage</code> data. Nothing is left behind.</p>
+<h3>5. Third-party services</h3>
+<p><strong>None.</strong> No Google Analytics, Mixpanel, Amplitude, Segment, Sentry, or any other telemetry.</p>
+<p>The only future exception is the Chrome Web Store upgrade flow planned for v1.1, which is processed by Google; payment details never pass through Shotly.</p>
+<h3>6. Children's privacy</h3>
+<p>Shotly collects no personal information, so children's data is never involved.</p>
+<h3>7. Contact</h3>
+<p>Questions or concerns: <code>privacy@getshotly.com</code></p>
+</main>
+</body>
+</html>
