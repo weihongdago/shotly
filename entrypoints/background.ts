@@ -159,8 +159,7 @@ export default defineBackground(() => {
     if (
       port.name !== PORT_NAMES.screenshot &&
       port.name !== PORT_NAMES.offscreen &&
-      port.name !== PORT_NAMES.history &&
-      port.name !== PORT_NAMES.license
+      port.name !== PORT_NAMES.history
     ) {
       return;
     }

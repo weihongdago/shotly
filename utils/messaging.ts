@@ -43,8 +43,6 @@ export const PORT_NAMES = {
   offscreen: 'offscreen-port',
   /** history-port — popup ↔ bg for screenshot history listing. */
   history: 'history-port',
-  /** license-port — popup ↔ bg for Pro license validation. */
-  license: 'license-port',
 } as const;
 
 export type PortName = (typeof PORT_NAMES)[keyof typeof PORT_NAMES];

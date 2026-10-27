@@ -16,7 +16,6 @@ describe('messaging protocol (architecture v1.2 §2.3)', () => {
       screenshot: 'screenshot-port',
       offscreen: 'offscreen-port',
       history: 'history-port',
-      license: 'license-port',
     });
   });
 
@@ -122,7 +121,7 @@ describe('messaging telemetry contract', () => {
 import type { Envelope, PortName, Scope } from '../messaging';
 
 type _CheckScope = Expect<Equal<Scope, 'bg' | 'content' | 'popup' | 'offscreen' | 'options'>>;
-type _CheckPortName = Expect<Equal<PortName, 'screenshot-port' | 'offscreen-port' | 'history-port' | 'license-port'>>;
+type _CheckPortName = Expect<Equal<PortName, 'screenshot-port' | 'offscreen-port' | 'history-port'>>;
 type _CheckEnvelope = Expect<Equal<Envelope['v'], 1>>;
 
 // vitest does not have built-in Expect/Equal helpers; alias for type-only tests.

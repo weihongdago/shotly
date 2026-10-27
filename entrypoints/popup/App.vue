@@ -877,7 +877,7 @@ async function removeHistoryItem(id: string) {
         borderColor: t().border,
       }"
     >
-      {{ i18n.t('footer.pro') }}
+      {{ i18n.t('footer.free') }}
     </footer>
   </div>
 </template>
