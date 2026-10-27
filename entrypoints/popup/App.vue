@@ -567,6 +567,7 @@ async function removeHistoryItem(id: string) {
     <main class="grid">
       <button
         class="card card-primary"
+        data-shotly-action="full"
         :style="{
           background: t().brand,
           color: t().brandFg,
@@ -579,6 +580,7 @@ async function removeHistoryItem(id: string) {
       </button>
       <button
         class="card"
+        data-shotly-action="region"
         :style="{
           background: t().surface,
           color: t().text,
@@ -592,6 +594,7 @@ async function removeHistoryItem(id: string) {
       </button>
       <button
         class="card"
+        data-shotly-action="history"
         :style="{
           background: t().surface,
           color: t().text,
@@ -604,6 +607,7 @@ async function removeHistoryItem(id: string) {
       </button>
       <button
         class="card"
+        data-shotly-action="shortcuts"
         :style="{
           background: t().surface,
           color: t().text,
