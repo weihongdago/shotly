@@ -434,6 +434,11 @@ export async function runScrollAndCapture(ctx: CaptureContext): Promise<{
       await sleep(200); // let scroll settle
       await waitForNetworkIdle();
       await sleep(PER_SEGMENT_BUFFER_MS);
+      // Make sure what we are about to capture has actually been painted.
+      // An iframe that scrolled into view for the first time is rastered
+      // on the next compositor frame — capturing before that frame lands
+      // an empty box in the image.
+      await waitForPaint();
 
       // D+2: this is the slot where the content script receives the real
       // dataUrl from bg (chrome.tabs.captureVisibleTab). The chunk passed
@@ -527,7 +532,33 @@ export async function waitForIframesReady(timeoutMs = 3_000): Promise<number> {
     ),
   );
 
+  // Loaded ≠ painted. Chrome rasterises an iframe's layer on the frame
+  // AFTER its load event, and `captureVisibleTab` grabs the compositor's
+  // output — so without this the capture can show an empty box where the
+  // embed should be. (PoC-D3 S3 hit exactly that: the badge was missing
+  // from one run and present in the next.)
+  await waitForPaint();
+
   return frames.length;
+}
+
+/**
+ * Resolve after the browser has produced at least one **painted** frame.
+ *
+ * Two animation frames is the cheapest reliable signal: the first rAF
+ * callback runs *before* the paint, the second one after it. One frame
+ * would be a race.
+ */
+export function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
 }
 
 // ─── OffscreenCanvas stitch (architecture §3.1 final step) ────────────────────

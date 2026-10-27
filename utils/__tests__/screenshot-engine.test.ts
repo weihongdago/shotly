@@ -13,6 +13,7 @@ import {
   resolveDeviceScale,
   restoreFixedElements,
   waitForIframesReady,
+  waitForPaint,
   type ScreenshotPlan,
 } from '../screenshot-engine';
 
@@ -398,6 +399,36 @@ describe('waitForIframesReady (S3 race)', () => {
     const started = Date.now();
     await expect(waitForIframesReady(60)).resolves.toBe(1);
     expect(Date.now() - started).toBeLessThan(2_000);
+  });
+});
+
+describe('waitForPaint', () => {
+  it('waits for two animation frames (one frame is a race)', async () => {
+    let frames = 0;
+    const original = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      frames += 1;
+      // Fire asynchronously, like the real thing.
+      return setTimeout(() => cb(performance.now()), 0) as unknown as number;
+    }) as typeof requestAnimationFrame;
+
+    try {
+      await waitForPaint();
+      expect(frames).toBe(2);
+    } finally {
+      globalThis.requestAnimationFrame = original;
+    }
+  });
+
+  it('resolves even when requestAnimationFrame is unavailable', async () => {
+    const original = globalThis.requestAnimationFrame;
+    // @ts-expect-error — deliberately removing the API
+    delete globalThis.requestAnimationFrame;
+    try {
+      await expect(waitForPaint()).resolves.toBeUndefined();
+    } finally {
+      globalThis.requestAnimationFrame = original;
+    }
   });
 });
 
