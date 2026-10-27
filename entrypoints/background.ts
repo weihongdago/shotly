@@ -248,8 +248,12 @@ export default defineBackground(() => {
   });
 
   // ─── Keyboard shortcuts (architecture §4.1 commands) ─────────────────────
+  // Only the full-page command exists. A `capture-visible` shortcut used to
+  // be declared, but it was routed here too — so it silently produced a
+  // full-page image. It was removed rather than shipped as a false claim;
+  // see the note in wxt.config.ts.
   chrome.commands?.onCommand?.addListener((cmd) => {
-    if (cmd === 'capture-full-page' || cmd === 'capture-visible') {
+    if (cmd === 'capture-full-page') {
       chrome.tabs
         .query({ active: true, currentWindow: true })
         .then(([tab]) => {

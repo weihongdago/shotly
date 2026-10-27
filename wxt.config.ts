@@ -54,13 +54,18 @@ export default defineConfig({
         },
         description: 'Capture the entire current page',
       },
-      'capture-visible': {
-        suggested_key: {
-          default: 'Alt+Shift+V',
-          mac: 'Alt+Shift+V',
-        },
-        description: 'Capture the visible viewport only',
-      },
+      // ⚠️ Do NOT re-add a `capture-visible` shortcut here.
+      //
+      // It used to be declared, and the background handler routed BOTH
+      // commands through the same full-page pipeline — so Alt+Shift+V
+      // produced a *full-page* image while the store listing advertised
+      // "capture the visible viewport". A false claim in the listing is a
+      // review risk and a trust problem.
+      //
+      // A correct viewport-only capture cannot reuse the scroll-and-stitch
+      // pipeline (it must not scroll, and must capture at the user's
+      // current scroll offset), so it needs its own capture path. That is
+      // a v1.1 feature — see progress.md.
     },
   },
 
