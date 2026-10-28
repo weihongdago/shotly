@@ -32,10 +32,12 @@
 import { test, expect, describe } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { maxAllowedCssHeight } from '../screenshot-engine';
 
 const ROOT = resolve(__dirname, '..', '..'); // shotly/
 const LISTING = readFileSync(resolve(ROOT, 'store-assets', 'CWS-listing.md'), 'utf8');
 const SITE_TEMPLATE = readFileSync(resolve(ROOT, 'tools', 'build-pages.mjs'), 'utf8');
+const README = readFileSync(resolve(ROOT, 'README.md'), 'utf8');
 
 /**
  * 从源码里解析一个数值常量。
@@ -162,6 +164,77 @@ describe('功能参数的数字 ↔ 代码常量', () => {
    *
    * 反向查（声明了但文档没写）由 store-listing-consistency 那条负责。
    */
+  /**
+   * README 里的数字也要对。
+   *
+   * README 是**公开仓库首页** —— 审核员、用户、以后维护的人都会看它。
+   * 之前只有权限理由表被守门覆盖，数字型声称是裸的。
+   *
+   * 注意：README 里那些 band 数（7/7、150、124/124）是 PoC-D3 的
+   * **实测结果**，不是公式推导出来的 —— 那些不查（查了只会假报警）。
+   * 这里只查能从常量推导的：历史库容量、页面高度上限。
+   */
+  test('README 里的数字型声称 = 代码常量', () => {
+    const max = readNumericConst('utils/history-store.ts', 'HISTORY_MAX_ENTRIES');
+    const limit = readNumericConst('utils/screenshot-engine.ts', 'HARD_PAGE_LIMIT_PX');
+
+    // 「50-entry LRU」
+    const en = README.match(/(\d+)-entry LRU/);
+    expect(en, 'README 里找不到「N-entry LRU」的历史库容量声称').toBeTruthy();
+    expect(
+      Number(en![1]),
+      `README 说历史库 ${en![1]} 条，代码里 HISTORY_MAX_ENTRIES = ${max}`,
+    ).toBe(max);
+
+    // 「max 50, LRU eviction」
+    const cap = README.match(/max (\d+), LRU eviction/);
+    expect(cap, 'README 里找不到「max N, LRU eviction」').toBeTruthy();
+    expect(
+      Number(cap![1]),
+      `README 说历史库上限 ${cap![1]} 条，代码里是 ${max}`,
+    ).toBe(max);
+
+    // 「50 000」页面高度上限
+    const h = README.match(/`min\(([\d\s ]+),/);
+    expect(h, 'README 里找不到页面高度上限的公式').toBeTruthy();
+    expect(
+      Number(h![1].replace(/[\s ]/g, '')),
+      `README 说上限 ${h![1]} px，代码里 HARD_PAGE_LIMIT_PX = ${limit}`,
+    ).toBe(limit);
+  });
+
+  /**
+   * README 写的是「min(50 000, ⌊65 535 / DPR⌋)」这个**公式** ——
+   * 公式里的两个数都要和代码一致，而且公式本身要真的成立。
+   *
+   * 直接用代码里的 `maxAllowedCssHeight()` 验：
+   * README 声称 DPR=1 → 50 000，DPR=2 → 32 767。
+   */
+  test('README 的页面高度上限公式 = 代码算出来的值', () => {
+    const limit = readNumericConst('utils/screenshot-engine.ts', 'HARD_PAGE_LIMIT_PX');
+    const canvasCap = readNumericConst('utils/screenshot-engine.ts', 'MAX_CANVAS_DIMENSION_PX');
+
+    // README 原文：「(50 000 at DPR 1, 32 767 at DPR 2)」
+    const m = README.match(/\((\d[\d\s ]+) at DPR 1, (\d[\d\s ]+) at DPR 2\)/);
+    expect(m, 'README 里找不到「N at DPR 1, M at DPR 2」的上限说明').toBeTruthy();
+
+    const dpr1 = Number(m![1].replace(/[\s ]/g, ''));
+    const dpr2 = Number(m![2].replace(/[\s ]/g, ''));
+
+    expect(dpr1, 'README 说 DPR 1 的上限和 HARD_PAGE_LIMIT_PX 不一致').toBe(limit);
+    expect(dpr2, 'README 说 DPR 2 的上限和代码算出来的不一致').toBe(
+      maxAllowedCssHeight(2),
+    );
+
+    // 公式里的 canvas 上限也要对
+    const canvas = README.match(/⌊(\d[\d\s ]+) \/ DPR⌋/);
+    expect(canvas, 'README 里找不到 canvas 维度上限').toBeTruthy();
+    expect(
+      Number(canvas![1].replace(/[\s ]/g, '')),
+      `README 说 canvas 上限 ${canvas![1]}，代码里 MAX_CANVAS_DIMENSION_PX = ${canvasCap}`,
+    ).toBe(canvasCap);
+  });
+
   test('listing 写的快捷键，wxt.config.ts 里真的这么声明', () => {
     const cfg = readFileSync(resolve(ROOT, 'wxt.config.ts'), 'utf8');
 
