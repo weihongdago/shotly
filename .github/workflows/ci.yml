@@ -55,6 +55,58 @@ jobs:
       - name: Build pages (dist-pages)
         run: node tools/build-pages.mjs
 
+      # 线上站点（GitHub Pages，gh-pages 分支）必须 = 仓库里生成的 dist-pages/。
+      #
+      # ## 为什么需要这条
+      #
+      # 站点是**手动** push 到 gh-pages 分支发布的，没有 deploy workflow。
+      # 所以它会静默漂：改了 tools/build-pages.mjs，main 上是新的，
+      # 但线上还是旧的 —— 而审核员点开的就是**线上那个**。
+      #
+      # 而且线上漂移的代价比仓库里漂移更大：
+      # 线上首页吹了「re-download」但扩展还没这功能 = 审核员当场看到。
+      #
+      # 这条守门把「忘了发布」变成 CI 里的红灯。
+      # ⚠️ 用 origin/gh-pages 而不是本地 gh-pages —— CI 里没有本地分支。
+      - name: Verify published site matches repo (gh-pages)
+        run: |
+          # ⚠️ CI 是浅克隆，fetch 之后 gh-pages 在 FETCH_HEAD，
+          #    **不是** origin/gh-pages（本地克隆才有后者）。两个都试。
+          git fetch origin gh-pages --depth=1
+          GH_REF=""
+          for candidate in origin/gh-pages FETCH_HEAD; do
+            if git rev-parse --verify --quiet "$candidate" >/dev/null; then
+              GH_REF="$candidate"
+              break
+            fi
+          done
+          if [ -z "$GH_REF" ]; then
+            echo "✗ 取不到 gh-pages 分支（origin/gh-pages 和 FETCH_HEAD 都不存在）"
+            exit 1
+          fi
+          echo "用 $GH_REF 作为线上站点的来源"
+          # ⚠️ 必须先 worktree remove + prune，再 rm -rf。
+          #    直接 rm -rf 目录会留下 .git/worktrees 里的登记，
+          #    下次 `git worktree add` 会报「missing but already registered」
+          #    —— 脚本只能跑一次，第二次就挂。
+          git worktree remove --force /tmp/gh-pages 2>/dev/null || true
+          git worktree prune
+          rm -rf /tmp/gh-pages
+          git worktree add --detach /tmp/gh-pages "$GH_REF"
+          echo "--- 差异（应为空）---"
+          if ! diff -ru /tmp/gh-pages dist-pages --exclude='.git'; then
+            echo ""
+            echo "✗ 线上站点和仓库里的 dist-pages/ 不一致。"
+            echo "  改动站点后要重新发布："
+            echo "    node tools/build-pages.mjs"
+            echo "    rm -rf /tmp/gh-pages"
+            echo "    git worktree add --detach /tmp/gh-pages gh-pages"
+            echo "    cp -R dist-pages/. /tmp/gh-pages/"
+            echo "    cd /tmp/gh-pages && git add -A && git commit -m 'docs: 更新公开站点' && git push origin gh-pages"
+            exit 1
+          fi
+          echo "✓ 线上站点与仓库一致"
+
       - name: Unit tests
         run: pnpm test
 
