@@ -114,10 +114,18 @@ function expandFiles(spec: string): string[] {
   const m = spec.match(/^(.*?)(\d+)\s*~\s*(\d+)$/);
   if (!m) return [spec];
   const [, dir, from, to] = m;
-  const ext = readdirSync(resolve(ASSETS, dir)).find((f) => /^\d/.test(f))?.match(/(\.\w+)$/)?.[1] ?? '';
   const out: string[] = [];
   for (let i = Number(from); i <= Number(to); i++) {
-    const hit = readdirSync(resolve(ASSETS, dir)).find((f) => f.startsWith(String(i).padStart(2, '0')));
+    // ⚠️ 只认图片扩展名。
+    // 之前用 `find(f => f.startsWith('03'))` —— 同前缀的兄弟文件
+    // （比如 03-xxx.json）会排在 03-xxx.png 前面（'j' < 'p'），
+    // 于是守门去读 JSON 当 PNG，解压直接报 "unexpected end of file"。
+    //
+    // 那种失败是好的（守门没静默跳过），但错在**选错了文件**，
+    // 而不是发现了真问题。只认 .png 就不会踩。
+    const hit = readdirSync(resolve(ASSETS, dir)).find(
+      (f) => f.startsWith(String(i).padStart(2, '0')) && /\.png$/i.test(f),
+    );
     if (hit) out.push(`${dir}/${hit}`);
   }
   return out;
@@ -193,14 +201,166 @@ describe('商店素材 ↔ listing 规格', () => {
       `screenshots/ 里有 ${shots.length} 张，listing 声称 4 张`,
     ).toBe(4);
   });
+
+  /**
+   * 进度条素材里，**进度条的填充比例要和旁边的文字一致**。
+   *
+   * ## 发现的 bug
+   *
+   * `03-capture-progress.png` 拍的是「采集进行中」的 popup。
+   * E2E 在进度刚出现的瞬间截图，而 `.bar-fill` 上有
+   * `transition: width 200ms ease`（entrypoints/popup/App.vue）——
+   * 于是拍到的是**动画中间态**：进度条还没长到该有的宽度。
+   *
+   * 实测：文字写「Capturing 2 / 5」（40%），进度条只填了 **35.2%**。
+   * 审核员看到的就是「说 40%，看着不到 40%」的进度条 —— 像是坏的。
+   *
+   * 修法在 E2E 那边（等动画停下来再截），这条守门防它**改回去**。
+   *
+   * ## 查法
+   *
+   * 不写字面量：从像素里量出进度条（品牌色填充 + 浅灰轨道），
+   * 再和图里渲染出来的文字对不上就报错。
+   */
+  test('进度条素材里，进度条填充比例和文字声称的一致', () => {
+    const path = resolve(ASSETS, 'screenshots', '03-capture-progress.png');
+    expect(existsSync(path), '找不到 03-capture-progress.png').toBe(true);
+
+    /**
+     * E2E 拍图时把当时的进度写在这个 meta 里。
+     *
+     * 为什么要 meta 而不是直接写字面量：
+     * - 切片总数（total）取决于测试页有多高，不是常量；
+     * - 写死 `2 / 5` 的话，测试页一改素材就悄悄对不上了。
+     *
+     * meta 是「拍图那一刻的真实状态」，像素是「拍图那一刻的真实画面」——
+     * 两者对不上，就说明画面和状态不一致（动画中间态）。
+     */
+    const metaPath = resolve(ASSETS, 'meta', '03-capture-progress.json');
+    expect(
+      existsSync(metaPath),
+      '缺少 meta/03-capture-progress.json（E2E 拍图时应该写出当时的进度）',
+    ).toBe(true);
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { i: number; total: number };
+
+    const { width, height, bpp, pixels } = decodePng(path);
+    const stride = width * bpp;
+
+    /**
+     * 品牌色从**源码**里解析，不写死。
+     *
+     * `utils/theme.ts` 里 `brand: '#0F766E'` 是主色（teal-700），
+     * 进度条的填充就是它。主题一改，这里自动跟着变 ——
+     * 写死字面量的话，换主题后这个守门会默默失效
+     * （找不到条 → 或者更糟：找到别的条 → 误报）。
+     */
+    const themeSrc = readFileSync(resolve(ROOT, 'utils', 'theme.ts'), 'utf8');
+    const brandHex = themeSrc.match(/brand:\s*['"]#([0-9A-Fa-f]{6})['"]/)?.[1];
+    expect(brandHex, 'utils/theme.ts 里没找到 brand 色值 —— 守门失效了').toBeTruthy();
+    const BRAND: [number, number, number] = [
+      parseInt(brandHex!.slice(0, 2), 16),
+      parseInt(brandHex!.slice(2, 4), 16),
+      parseInt(brandHex!.slice(4, 6), 16),
+    ];
+
+    const at = (x: number, y: number): [number, number, number] => [
+      pixels[y * stride + x * bpp],
+      pixels[y * stride + x * bpp + 1],
+      pixels[y * stride + x * bpp + 2],
+    ];
+    const isBrand = (c: [number, number, number]) =>
+      Math.abs(c[0] - BRAND[0]) <= 2 &&
+      Math.abs(c[1] - BRAND[1]) <= 2 &&
+      Math.abs(c[2] - BRAND[2]) <= 2;
+    /** 两色足够接近就算同色（抗锯齿 + 缩放会带来 1-2 的偏差）。 */
+    const near = (a: [number, number, number], b: [number, number, number]) =>
+      Math.abs(a[0] - b[0]) <= 3 &&
+      Math.abs(a[1] - b[1]) <= 3 &&
+      Math.abs(a[2] - b[2]) <= 3;
+
+    /**
+     * 找进度条。
+     *
+     * ⚠️ 不能简单地取「这一行上品牌色的最小 x 和最大 x」——
+     * 版式里**还有别的品牌色元素**（x1107-1162 那一段），
+     * 那样会把填充段和不相干的东西连起来，量出 100%。
+     *
+     * 进度条的特征是：**一段品牌色，紧接着一段轨道色**。
+     * 就找这种「品牌色 → 轨道色」相邻的组合。
+     *
+     * 轨道色也不写死：填充段右边第一个像素就是轨道色，
+     * 然后按「同色连续段」向右延伸 —— 遇到卡片背景就停。
+     */
+    interface Bar {
+      row: number;
+      fillStart: number;
+      fillEnd: number;
+      trackEnd: number;
+    }
+    let bar: Bar | null = null;
+    for (let y = 0; y < height; y++) {
+      let x = 0;
+      while (x < width) {
+        if (!isBrand(at(x, y))) {
+          x++;
+          continue;
+        }
+        const fillStart = x;
+        while (x < width && isBrand(at(x, y))) x++;
+        const fillEnd = x - 1;
+        // 必须是「品牌色后面紧跟轨道色」才算进度条
+        if (x < width) {
+          const trackColor = at(x, y);
+          let trackEnd = x;
+          while (trackEnd + 1 < width && near(at(trackEnd + 1, y), trackColor)) trackEnd++;
+          const trackWidth = trackEnd - fillStart + 1;
+          // 进度条是宽扁的：宽度要够长
+          if (trackWidth > 100) {
+            if (!bar || trackWidth > bar.trackEnd - bar.fillStart + 1) {
+              bar = { row: y, fillStart, fillEnd, trackEnd };
+            }
+          }
+        }
+      }
+    }
+    expect(bar, '素材里找不到进度条（品牌色紧跟同色轨道的长横条）—— 截图内容变了？').not.toBeNull();
+    const b = bar as Bar;
+
+    const trackWidth = b.trackEnd - b.fillStart + 1;
+    const fillWidth = b.fillEnd - b.fillStart + 1;
+    const fillPct = (fillWidth / trackWidth) * 100;
+
+    /**
+     * 期望比例 = (i + 1) / total。
+     *
+     * 源码里 bar 的宽度是
+     *   `Math.round(((progress.i + 1) / progress.total) * 100)%`
+     * （entrypoints/popup/App.vue），文字是 `${progress.i + 1} / ${progress.total}`。
+     * 所以 i 是**已经完成的切片数**（0 起），显示的是第 i+1 片。
+     */
+    const expectedPct = ((meta.i + 1) / meta.total) * 100;
+
+    // 允许 1.5% 的误差：像素取整 + 抗锯齿 + 弹窗→版式的合成缩放
+    expect(
+      Math.abs(fillPct - expectedPct),
+      `进度条填充了 ${fillPct.toFixed(1)}%，但文字声称 ${meta.i + 1} / ${meta.total}` +
+        `（= ${expectedPct.toFixed(1)}%）—— 进度条和文字对不上` +
+        `（E2E 是不是又在动画中间截图了？.bar-fill 有 200ms 的 transition）`,
+    ).toBeLessThan(1.5);
+  });
 });
 
 /**
- * 统计 PNG 里的唯一颜色数。
+ * 完整解码 PNG（解 zlib + 反过滤），返回像素缓冲。
  *
- * 完整解码（解 zlib + 反过滤），够慢但对 6 张素材完全够用。
+ * 够慢但对 6 张素材完全够用。
  */
-function uniqueColors(path: string): Set<string> {
+function decodePng(path: string): {
+  width: number;
+  height: number;
+  bpp: number;
+  pixels: Buffer;
+} {
   const d = readFileSync(path);
   const width = d.readUInt32BE(16);
   const height = d.readUInt32BE(20);
@@ -208,7 +368,6 @@ function uniqueColors(path: string): Set<string> {
   const bpp = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType as 0 | 2 | 3 | 4 | 6] ?? 3;
 
   let pos = 8;
-  let idat = Buffer.alloc(0);
   const idatParts: Buffer[] = [];
   while (pos < d.length) {
     const len = d.readUInt32BE(pos);
@@ -217,7 +376,7 @@ function uniqueColors(path: string): Set<string> {
     if (type === 'IEND') break;
     pos += 12 + len;
   }
-  idat = Buffer.concat(idatParts);
+  const idat = Buffer.concat(idatParts);
 
   const zlib = require('node:zlib') as typeof import('node:zlib');
   const raw = zlib.inflateSync(idat);
@@ -260,14 +419,23 @@ function uniqueColors(path: string): Set<string> {
     line.copy(prev);
   }
 
+  return { width, height, bpp, pixels: out };
+}
+
+/**
+ * 统计 PNG 里的唯一颜色数。
+ */
+function uniqueColors(path: string): Set<string> {
+  const { width, height, bpp, pixels } = decodePng(path);
+  const stride = width * bpp;
   const colors = new Set<string>();
   for (let y = 0; y < height; y += 3) {
     for (let x = 0; x < width; x += 3) {
       const o = y * stride + x * bpp;
       colors.add(
         bpp >= 3
-          ? `${out[o]},${out[o + 1]},${out[o + 2]}`
-          : `${out[o]}`,
+          ? `${pixels[o]},${pixels[o + 1]},${pixels[o + 2]}`
+          : `${pixels[o]}`,
       );
     }
   }
