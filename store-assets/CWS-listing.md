@@ -57,7 +57,7 @@ Free and open source. Chrome MV3.
 | 隐私政策 | 公开可访问 URL | https://weihongdago.github.io/shotly/privacy.html | ✅ 已上线（HTTP 200）；域名 `getshotly.com` 到手后可换自有域名 |
 | **支持页面** | 公开可访问 URL | https://weihongdago.github.io/shotly/support.html | ✅ 已上线（HTTP 200）—— **CWS 后台必填项**，之前漏了 |
 | **主页** | 公开可访问 URL | https://weihongdago.github.io/shotly/ | ✅ 已上线（HTTP 200）—— 后台「Homepage URL」填这个 |
-| 功能截图 | 1280×800 PNG ×4 | `screenshots/01~04` | ✅ 真实浏览器运行产物（2026-10-27 重拍，popup 为英文，与 listing 一致） |
+| 功能截图 | 1280×800 PNG ×4 | `screenshots/01~04` | ✅ 真实浏览器运行产物（2026-10-28 重拍，popup 为英文，与 listing 一致） |
 | 分类 | — | `Productivity` | ✅ |
 | 语言 | — | English (Primary), 中文（简体） | ✅ v1.0 只交这 2 份 listing 文本（界面只有 en/zh，虚假声明 4 语种反而有审核风险） |
 
@@ -117,6 +117,8 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 > 拍摄时统一用浅色主题 + 薄荷绿品牌色，与大宣传图风格一致。
 > **2026-10-27 重拍**：popup 原先是中文的，与英文 listing 对不上；i18n 落地后
 > 截图统一用 `locale: 'en-US'` 重拍，现在界面与 listing 一致。
+> **2026-10-28 补拍**：popup footer 改文案（去掉了不存在的 “Pro”）后重拍，
+> 保证截图和实际 UI 一致。
 
 ## 6. 权限理由（CWS 审核必填）
 
@@ -141,7 +143,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 
 ## 8. 提审前检查清单
 
-- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（241/241）
+- [x] `pnpm build` 通过 + `pnpm typecheck` 无错误 + `pnpm test` 全绿（245/245）
 - [x] `pnpm zip` 产出包已验证（`.output/shotly-0.1.0-chrome.zip`，230 KB，16 个文件，含 `_locales/`）
 - [x] **打包产物本身**已测（`playwright-packaged-zip.spec.ts`：从 zip 解压出来装进 Chrome 跑真实截图）
 - [x] CI 直接产出可提审的 zip artifact（`shotly-chrome-zip`）—— 提审时直接下，不用本地重新打包
