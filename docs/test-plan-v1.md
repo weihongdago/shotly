@@ -3,7 +3,7 @@
 > ## ⚠️ 历史测试方案 —— 不是 v1.0 的实际实现（2026-10-28 标注）
 >
 > 本文是 **2026-07-11 的测试计划稿**，描述的是**当时的计划**。
-> 实际执行的测试在 `test-infra/e2e/`（Playwright，真实 Chrome）。
+> 实际执行的测试在 `e2e/`（Playwright，真实 Chrome）。
 > 几处与现状不符：
 >
 > | 本文写的 | v1.0 实际 |
@@ -13,7 +13,7 @@
 > | §8.1 `method: 'A' / 'B'` + `attempts` 字段 | `capture-fallback.ts` 未接入生产路径，实际无 A/B 重试 |
 > | 状态栏「补 4 语种隐私」 | v1.0 只有 2 语种（en / zh_CN） |
 >
-> 隐私相关的**实际验证**在 `test-infra/e2e/playwright-privacy-no-network.spec.ts`：
+> 隐私相关的**实际验证**在 `e2e/playwright-privacy-no-network.spec.ts`：
 > 跑完整截图流程，拦截全部网络请求，断言零第三方请求。
 
 > **版本**：v1.0 D+1 首版｜**日期**：2026-07-11｜**作者**：小白（dispatcher 代笔，因 M3 provider 超时）
@@ -567,12 +567,12 @@ R=负责 / A=问责 / C=咨询 / I=知情
 
 ### 13.3 §4.2 patch｜浏览器矩阵：完整 Playwright 配置代码
 
-**【完整 playwright.config.ts 已落地】** → `test-infra/playwright.config.ts`（B3 交付）
+**【完整 playwright.config.ts 已落地】** → `playwright.config.ts`（B3 交付）
 
 关键点：
 
 ```ts
-// 关键代码段（完整版见 test-infra/playwright.config.ts）
+// 关键代码段（完整版见 playwright.config.ts）
 import { defineConfig, devices } from '@playwright/test';
 
 const SHOTLY_BUILT = '../shotly/.output/chrome-mv3';
@@ -595,7 +595,7 @@ export default defineConfig({
 });
 ```
 
-**【测试实例（MV3 扩展加载）】** → `test-infra/e2e/playwright-mv3-launcher.spec.ts`（B3 交付）
+**【测试实例（MV3 扩展加载）】** → `e2e/playwright-mv3-launcher.spec.ts`（B3 交付）
 
 关键模式：
 
@@ -670,8 +670,8 @@ R = Responsible（执行）| A = Accountable（问责）| C = Consulted（咨询
 |------|------|------|------|
 | **B2 静态分析脚本** | `test-infra/tools/static-analysis-check.mjs` | ✅ 已交付 | `pnpm static` 一键跑 5 项检查 |
 | **B2 静态分析报告** | `test-infra/reports/static-analysis-2026-07-11.md` | ✅ 已交付 | D+1 首跑：4 PASS / 1 WARN（无 eslint） |
-| **B3 Playwright 配置** | `test-infra/playwright.config.ts` | ✅ 已交付 | `pnpm test:smoke` 跑 launcher |
-| **B3 Playwright MV3 launcher spec** | `test-infra/e2e/playwright-mv3-launcher.spec.ts` | ✅ 已交付 | 4 个测试：装入 / 权限 / popup / chrome:// 截图 |
+| **B3 Playwright 配置** | `playwright.config.ts` | ✅ 已交付 | `pnpm test:smoke` 跑 launcher |
+| **B3 Playwright MV3 launcher spec** | `e2e/playwright-mv3-launcher.spec.ts` | ✅ 已交付 | 4 个测试：装入 / 权限 / popup / chrome:// 截图 |
 | **B4 隐私预审报告** | `test-infra/reports/privacy-precheck-v1.md` | ✅ 已交付 | 红线满足：D+1 无外网上传 |
 | **B1 安装烟雾测试** | `test-infra/reports/install-smoke-test-result.md` | ⏳ D+2 必出 | 复用 B3 spec |
 | **test-infra 包** | `test-infra/package.json` | ✅ 已交付 | `pnpm i && pnpm test:smoke` |

@@ -1,0 +1,175 @@
+name: E2E
+
+# ⚠️ 为什么单独一个 workflow，而不是塞进 ci.yml：
+#
+#    这套 E2E 以前住在 workspace 仓库的 test-infra/ 里，
+#    **CI 从来没跑过它** —— 29 个用例（含隐私「零第三方网络请求」守门、
+#    打包 zip 守门、商店素材守门）全靠人工本地跑。
+#
+#    守门不在 CI 里跑 = 守门不存在。它保护的是商店 listing 的合规承诺
+#    （不上传、不追踪）和要提交给 CWS 的实际产物 —— 这两样 CWS 审核员
+#    能直接看，值得让 CI 每次 push 都验一遍。
+#
+#    单独一个 workflow 的原因：E2E 要装 Chromium（~150MB）+ 真跑浏览器，
+#    比单元测试慢一个数量级。拆开才能让 ci.yml 快速反馈，
+#    也才能给 E2E 单独设 timeout 和失败策略。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright E2E (真实 Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # wxt prepare 生成 .wxt/ 类型 —— 少了它 type-check 挂，
+      # 而且 E2E 也要 build 产物。
+      - name: Prepare WXT
+        run: pnpm exec wxt prepare
+
+      # Playwright 的 bundled Chromium。MV3 扩展必须用 bundled Chromium：
+      # Chrome stable 会拒绝 --load-extension / --disable-extensions-except
+      # （见 playwright.config.ts 的注释）。
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # ⚠️ build 必须先做完 ——
+      #    几乎每个 E2E 都从 .output/chrome-mv3/ 装扩展。
+      #    没有产物时，spec 里的 test.skip 会**静默跳过**（不报错），
+      #    CI 就会绿着通过而什么都没测 —— 这是最危险的一种假绿。
+      - name: Build (chrome-mv3)
+        run: pnpm build
+
+      # 打包产物也要（packaged-zip spec 测的是要提交给 CWS 的那个 zip）
+      - name: Package (zip)
+        run: pnpm zip
+
+      # 商店素材 spec 需要 4 张截图 + 一份 meta；缺了会 skip。
+      # 让它跑，并要求它真的产出（spec 内部有断言）。
+      #
+      # 用 json reporter 而不是 github reporter —— 因为下面要拿它来
+      # 数「到底有多少用例被跳过了」（github reporter 的输出不好解析）。
+      - name: Run E2E
+        run: pnpm exec playwright test --reporter=json > e2e-results.json || true
+
+      # ⚠️ 假绿防线：E2E 全绿但一个都没跑，是最坏的情况。
+      #
+      #    spec 里的 test.skip 是**静默**的 —— 条件不满足时测试标记为
+      #    skipped，exit code 还是 0。「全绿但全跳过」和「全绿且真跑过」
+      #    在 exit code 上完全没区别。
+      #
+      #    所以这里不用 exit code 判断，而是解析 json reporter 的统计：
+      #    有任何用例被跳过 = 失败。CI 里不该有「可跳过的用例」——
+      #    真要跳，说明构建或环境有问题，应该被看见。
+      #
+      # ⚠️ 另一个洞（必须一起堵）：
+      #    上面跑 Playwright 时用了 `|| true`（不然失败时拿不到 json）。
+      #    于是**真实失败**也会被吞掉 —— 如果这里只看 expected/skipped，
+      #    一个红了的 E2E 一样能让 CI 变绿。
+      #    所以必须同时检查 stats.unexpected（失败数）。
+      - name: Verify E2E actually ran (no silent skips, no swallowed failures)
+        run: |
+          set -euo pipefail
+          node <<'EOF'
+          const fs = require('fs');
+          const path = 'e2e-results.json';
+          if (!fs.existsSync(path)) {
+            console.error('❌ 没有 E2E 结果文件 —— Playwright 根本没跑起来');
+            process.exit(1);
+          }
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(path, 'utf8'));
+          } catch (e) {
+            console.error('❌ E2E 结果不是合法 JSON：', e.message);
+            process.exit(1);
+          }
+          const stats = report.stats ?? {};
+          const expected = stats.expected ?? 0;
+          const skipped = stats.skipped ?? 0;
+          const flaky = stats.flaky ?? 0;
+          const unexpected = stats.unexpected ?? 0;
+          console.log(
+            `E2E 统计：预期 ${expected}，失败 ${unexpected}，跳过 ${skipped}，不稳定 ${flaky}`,
+          );
+
+          /** 把指定状态的用例列出来，方便在 CI 日志里直接看。 */
+          function listTests(status) {
+            const out = [];
+            for (const suite of report.suites ?? []) {
+              for (const spec of suite.specs ?? []) {
+                for (const t of spec.tests ?? []) {
+                  if (t.status === status) {
+                    let msg = '';
+                    for (const r of t.results ?? []) {
+                      if (r.errors?.[0]?.message) { msg = r.errors[0].message.split('\n')[0]; break; }
+                    }
+                    out.push(`   [${status}] ${spec.title}${msg ? ' — ' + msg : ''}`);
+                  }
+                }
+              }
+            }
+            return out;
+          }
+
+          let failed = false;
+
+          // ⚠️ 真实失败不能被 `|| true` 吞掉。
+          if (unexpected > 0) {
+            console.error(`❌ 有 ${unexpected} 个 E2E 用例失败`);
+            console.error(listTests('unexpected').join('\n'));
+            failed = true;
+          }
+          if (expected === 0) {
+            console.error('❌ 一个用例都没跑 —— 全部被跳过了');
+            failed = true;
+          }
+          if (skipped > 0) {
+            console.error(`❌ 有 ${skipped} 个用例被静默跳过 —— 守门没在测东西`);
+            console.error(listTests('skipped').join('\n'));
+            failed = true;
+          }
+          if (flaky > 0) {
+            console.error(`❌ 有 ${flaky} 个用例不稳定（重跑才过）—— 不能算通过`);
+            console.error(listTests('flaky').join('\n'));
+            failed = true;
+          }
+          if (failed) process.exit(1);
+          console.log(`✓ ${expected} 个 E2E 用例全部真跑过，没有静默跳过，也没有失败`);
+          EOF
+
+      # 失败时把 trace / video / 截图留下来（CI artifact）。
+      # 光有「测试失败」没有现场，排查要重跑一遍，太慢。
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore

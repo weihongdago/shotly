@@ -15,7 +15,10 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test e2e/playwright-mv3-launcher.spec.ts",
+    "test:e2e:store": "playwright test e2e/playwright-store-screenshots.spec.ts"
   },
   "dependencies": {
     "idb": "^8.0.4",
@@ -30,6 +33,8 @@
     "typescript": "^5.9.3",
     "vitest": "^2.1.9",
     "vue-tsc": "^3.2.5",
-    "wxt": "^0.20.27"
+    "wxt": "^0.20.27",
+    "@playwright/test": "1.61.1",
+    "@types/node": "^22.10.0"
   }
 }

@@ -118,6 +118,23 @@ const offscreenWaiters = new Set<(port: chrome.runtime.Port) => void>();
 /** How long to wait for the offscreen document to connect + handshake. */
 const OFFSCREEN_CONNECT_TIMEOUT_MS = 8_000;
 
+/**
+ * 内容脚本 → popup 的转发事件类型。
+ *
+ * 这些消息由 `forwardContentEvents()` 直接转给 popup，
+ * 不走 `handlePortMessage()` 的命令 switch。
+ * 放在模块级是为了两个地方共用：
+ *   1. forwardContentEvents —— 判断哪些要转发
+ *   2. handlePortMessage   —— 提前忽略它们（否则会打假警报日志）
+ */
+const CONTENT_RELAY_TYPES = new Set([
+  'screenshot:progress',
+  'screenshot:error',
+  'screenshot:too-long',
+  'screenshot:done',
+  'screenshot:plan-result',
+]);
+
 // ─── Background entrypoint ────────────────────────────────────────────────────
 
 export default defineBackground(() => {
@@ -512,6 +529,24 @@ async function handlePortMessage(
   env: Envelope,
 ): Promise<void> {
   const isContent = portScope(port) === 'content';
+
+  /**
+   * 内容脚本 → popup 的转发事件（progress / done / error …）。
+   *
+   * 这些消息由 `forwardContentEvents()` 处理（它挂在 content port 上，
+   * 直接把事件转给 popup）。但 content port 的消息**也会**流到这里，
+   * 于是这个 switch 看到它们会走到 default 分支，打一条
+   * 「unhandled message type: screenshot:progress」。
+   *
+   * 那条日志是**假警报**：进度确实被转发了，popup 也确实收到了。
+   * 但它会污染每次采集的日志（一次采集 6+ 条），
+   * 而且真出问题时会把人引向错误的方向 ——
+   * 「进度没被处理」和「进度被转发到 popup」是两回事。
+   *
+   * 所以这里直接忽略这类消息，不进 switch。
+   */
+  if (CONTENT_RELAY_TYPES.has(env.type)) return;
+
 
   // Per-port dedupe by envelope.id. If two listeners slip through (e.g. SW
   // restart during a long capture re-registers onConnect), only the first
@@ -1048,13 +1083,7 @@ function forwardContentEvents(
   contentPort: chrome.runtime.Port,
   tabId: number,
 ): void {
-  const RELAY_TYPES = new Set([
-    'screenshot:progress',
-    'screenshot:error',
-    'screenshot:too-long',
-    'screenshot:done',
-    'screenshot:plan-result',
-  ]);
+  const RELAY_TYPES = CONTENT_RELAY_TYPES;
   contentPort.onMessage.addListener((envelope: Envelope) => {
     if (!RELAY_TYPES.has(envelope.type)) return;
     const live = captureSessions.get(tabId);

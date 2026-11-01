@@ -73,7 +73,8 @@ pnpm build
 # 产物：.output/chrome-mv3/
 
 # 准备测试基础设施
-cd ../test-infra
+# ⚠️ E2E 现在就在本仓库的 e2e/（以前在 workspace 仓库的 test-infra/），
+#    这样 CI 才跑得到。playwright 依赖也装在本仓库。
 pnpm install
 pnpm exec playwright install chromium
 ```
@@ -81,8 +82,8 @@ pnpm exec playwright install chromium
 ### 1. 烟雾测试（5 min）— 验证扩展可装入
 
 ```bash
-cd test-infra
-pnpm test:smoke
+cd <shotly 仓库根>
+pnpm test:e2e:smoke
 # 期望：确认 .output/chrome-mv3 可装入 + 权限无缺失
 ```
 
@@ -93,8 +94,8 @@ pnpm test:smoke
 #### A. 自动化模式（推荐，环境稳定后用）
 
 ```bash
-cd test-infra
-pnpm test:e2e:poc-d3
+cd <shotly 仓库根>
+pnpm exec playwright test e2e/playwright-poc-d3.spec.ts
 # 内部：playwright 加载 .output/chrome-mv3 + 每个 fixture 一个 test
 # 报告：reports/poc-d3/poc-d3-report.json + poc-d3-logs.txt
 ```

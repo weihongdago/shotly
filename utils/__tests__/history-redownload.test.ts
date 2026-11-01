@@ -29,7 +29,7 @@
  * 检查关键接线是否还在 —— 漂了就会红。
  *
  * 代价：这是**结构性**检查，不是**行为性**检查。真正的行为验证在
- * `test-infra/e2e/`（真实 Chrome 跑一遍重新下载）。
+ * `e2e/`（真实 Chrome 跑一遍重新下载）。
  */
 
 import { describe, expect, it } from 'vitest';

@@ -114,8 +114,8 @@ jobs:
       # 这些数字是审核被质疑「功能不足」时要贴出来的证据，而手抄的数字
       # 每次加测试就会过期（实测漂过：196→208→222）。
       # 数字从 runner 自己数（vitest list / playwright --list），不是数源码。
-      # ⚠️ CI 里没有 test-infra/ 目录（E2E 在另一个仓库），所以 E2E 数
-      #    在这里数不到 —— 脚本会明确说出来，不假装数到了。
+      # ✅ E2E 现在在本仓库的 e2e/ 里（以前在 workspace 仓库的 test-infra/），
+      #    所以 E2E 数**在这里数得到**，脚本会真的数并比对。
       - name: Verify store doc numbers are current
         run: node tools/sync-store-counts.mjs --check
 
@@ -138,9 +138,10 @@ jobs:
       # ⚠️ 打包产物的冒烟测试需要 Playwright + 真实 Chrome，而且用的是
       #    headful（Playwright 自带 Chromium）——CI 里跑不了 headful。
       #    所以这里只做**静态**校验：zip 能解开、关键文件都在、manifest
-      #    与 unpacked 构建一致。真实浏览器跑 zip 的那条测试在本地跑
-      #    （test-infra/e2e/playwright-packaged-zip.spec.ts），
-      #    CI 里用下面的 zip 完整性检查做兜底。
+      #    与 unpacked 构建一致。
+      #    真实浏览器跑 zip 的那条测试在**另一个 workflow** 里跑
+      #    （e2e.yml，headless 的 Playwright Chromium）——
+      #    e2e/playwright-packaged-zip.spec.ts。
       - name: Verify packaged zip (static)
         run: |
           set -euo pipefail

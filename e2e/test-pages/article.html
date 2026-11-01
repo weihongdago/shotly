@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Field Notes — How Scroll-Stitching Actually Works</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #1f2937;
+        background: #ffffff;
+        line-height: 1.75;
+      }
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 14px 48px;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .nav .logo { font-weight: 700; letter-spacing: -0.02em; font-size: 17px; }
+      .nav a { color: #6b7280; text-decoration: none; font-size: 14px; }
+      .hero {
+        padding: 72px 48px 56px;
+        border-bottom: 1px solid #f3f4f6;
+        max-width: 820px;
+      }
+      .hero h1 {
+        font-size: 44px;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+        margin: 0 0 18px;
+        font-weight: 800;
+      }
+      .hero p.lede { font-size: 19px; color: #4b5563; margin: 0 0 22px; }
+      .byline { font-size: 13px; color: #9ca3af; }
+      .content { max-width: 820px; padding: 8px 48px 120px; }
+      .content h2 {
+        font-size: 27px;
+        letter-spacing: -0.02em;
+        margin: 56px 0 16px;
+        font-weight: 700;
+      }
+      .content p { font-size: 16.5px; margin: 0 0 18px; color: #374151; }
+      .content figure {
+        margin: 32px 0;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #f9fafb;
+      }
+      .content figure .ph {
+        height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9ca3af;
+        font-size: 14px;
+        letter-spacing: 0.04em;
+      }
+      .content figcaption {
+        padding: 12px 18px;
+        font-size: 13px;
+        color: #6b7280;
+        border-top: 1px solid #e5e7eb;
+        background: #ffffff;
+      }
+      blockquote {
+        margin: 28px 0;
+        padding: 4px 0 4px 22px;
+        border-left: 3px solid #0d9488;
+        color: #4b5563;
+        font-style: italic;
+        font-size: 17px;
+      }
+      .content ul { padding-left: 22px; margin: 0 0 18px; }
+      .content li { margin-bottom: 9px; font-size: 16.5px; color: #374151; }
+      code {
+        background: #f3f4f6;
+        padding: 2px 6px;
+        border-radius: 5px;
+        font-size: 14.5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .footer {
+        border-top: 1px solid #e5e7eb;
+        padding: 40px 48px 72px;
+        color: #9ca3af;
+        font-size: 13px;
+        max-width: 820px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <span class="logo">Field&nbsp;Notes</span>
+      <a href="#">Articles</a>
+      <a href="#">Archive</a>
+      <a href="#">About</a>
+    </nav>
+
+    <header class="hero">
+      <h1>How Scroll-Stitching Actually Works</h1>
+      <p class="lede">
+        Every full-page screenshot tool you have ever used is doing roughly the same
+        trick. Here is what that trick is, where it breaks, and why the seams show up.
+      </p>
+      <div class="byline">By the Field Notes editors · 12 min read · Updated last week</div>
+    </header>
+
+    <article class="content">
+      <p>
+        A browser cannot hand you an image of a page that does not fit on your screen.
+        There is no API for it. The <code>Page.captureScreenshot</code> endpoint you may
+        have read about in the DevTools Protocol only works for the viewport, and the
+        deprecated <code>captureVisibleTab</code> extension API behaves the same way.
+      </p>
+      <p>
+        So tools do what you would do if you had to photocopy a newspaper column by
+        column: scroll to a position, take a picture of what is on screen, scroll a
+        little further, take another picture, and then paste the pictures together.
+      </p>
+
+      <figure>
+        <div class="ph">▣ viewport capture</div>
+        <figcaption>One viewport. The part of the page the user can actually see.</figcaption>
+      </figure>
+
+      <h2>The three failure modes</h2>
+      <p>
+        Almost every ugly full-page screenshot traces back to one of three problems,
+        and they are worth naming precisely because the fix for each is different.
+      </p>
+      <ul>
+        <li>
+          <strong>Fixed headers repeat.</strong> A sticky navigation bar is captured in
+          every single frame, so the finished image has the header painted down its
+          entire length.
+        </li>
+        <li>
+          <strong>Animations drift.</strong> A lazy-loading image that finishes
+          arriving halfway through the capture will appear in the lower frames and
+          not the upper ones, so the same region is painted twice with different content.
+        </li>
+        <li>
+          <strong>The last frame is short.</strong> If the page is 4,050 pixels tall and
+          the viewport is 800, the final scroll position is only 50 pixels of new
+          content. Most implementations paste a full-height frame anyway, which
+          stretches the tail of the page and produces the smeared, elongated look.
+        </li>
+      </ul>
+
+      <blockquote>
+        The tail is where the bugs live. A page whose height is not an exact multiple
+        of the viewport height is the case that separates a tool that works from a
+        tool that works most of the time.
+      </blockquote>
+
+      <h2>Why the last frame is hard</h2>
+      <p>
+        The browser refuses to scroll past the bottom of the document. If you ask for
+        scroll position 4,000 on a 4,050-pixel page with an 800-pixel viewport, you get
+        3,250 — the last legal position. The remaining 50 pixels of the page have
+        already been visible in the previous frame, and they are visible
+        <em>above</em> the new frame's top edge, not below its bottom edge.
+      </p>
+      <p>
+        Get this wrong and you have two options, both bad. Either you duplicate those
+        50 pixels, so the final image is 50 pixels too tall and the seam is visible.
+        Or you stretch the last frame, which looks like the page was scanned on a
+        bad printer.
+      </p>
+
+      <figure>
+        <div class="ph">▣ stitched result</div>
+        <figcaption>
+          A correctly stitched result. Notice the last section is exactly as tall as
+          the content it contains — not stretched to fill a slot.
+        </figcaption>
+      </figure>
+
+      <h2>Device pixel ratio is the other half</h2>
+      <p>
+        Every coordinate in the DOM is in CSS pixels. Every pixel in a captured
+        bitmap is in device pixels. On a display with a ratio of 2, a viewport that
+        measures 800 CSS pixels produces a bitmap that is 1,600 pixels tall, and any
+        crop rectangle has to be scaled by that same ratio or it will be wrong by
+        exactly a factor of two.
+      </p>
+      <p>
+        The failure is quiet. Nothing throws. The image comes out the right
+        dimensions, and the top of every frame is subtly wrong.
+      </p>
+
+      <h2>What good looks like</h2>
+      <ul>
+        <li>Slice boundaries land on the viewport, and the last slice is cropped to content.</li>
+        <li>Sticky elements are hidden during capture and restored afterwards.</li>
+        <li>Scroll positions are read back from the DOM after they settle, not predicted.</li>
+        <li>The output is byte-for-byte identical across runs on the same page.</li>
+      </ul>
+      <p>
+        None of that is exotic. It is just a handful of details that have to be right,
+        and every one of them fails silently when it is wrong — which is precisely
+        why they deserve automated checks rather than a hopeful squint at the output.
+      </p>
+
+      <h2>Testing the stitch</h2>
+      <p>
+        The obvious test asserts that the output is the right size. That test passes
+        for a completely blank image, because a blank PNG of the right dimensions is
+        still a perfectly valid PNG of the right dimensions. The check that actually
+        catches a broken stitch looks at the pixels: are there any non-white
+        regions, and does every horizontal band of the output contain something?
+      </p>
+
+      <h2>Wrapping up</h2>
+      <p>
+        The technique is not new, but the details are where the quality lives. A tool
+        that gets the last frame right, scales the crop by the device pixel ratio,
+        and verifies its own output pixel by pixel will produce images that look
+        correct every single time. One that checks the output is merely
+        non-empty will produce a blank page roughly as often as not.
+      </p>
+    </article>
+
+    <footer class="footer">
+      Field Notes · Published under a permissive licence · Typeset in the browser
+    </footer>
+  </body>
+</html>

@@ -30,3 +30,13 @@ node_modules/
 
 # 公开站点构建产物（tools/build-pages.mjs 生成）
 dist-pages/
+
+# ── E2E 产物（Playwright）─────────────────────────────
+# 这些是本地跑测试时生成的中间产物，不是源码。
+# ⚠️ 别把 store-assets/screenshots/ 一起 ignore 掉 ——
+#    那 4 张是要提交给 Chrome Web Store 的正式素材，必须版本化。
+reports/
+test-results/
+playwright-report/
+.tmp-user-data/
+blob-report/

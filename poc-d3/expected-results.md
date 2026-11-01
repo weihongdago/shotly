@@ -2,7 +2,7 @@
 
 > **版本**：D+4 修订 (2026-10-27) · **作者**：开发工程师 👨‍💻
 > **配套**：[README.md](./README.md) / `scenarios/*.md` / [architecture.md §3.6](../../architecture.md)
-> **跑测命令**：`cd test-infra && pnpm test:e2e:poc-d3`
+> **跑测命令**：`cd shotly && pnpm exec playwright test e2e/playwright-poc-d3.spec.ts`
 
 本文件是**判卷标准**：每个场景列出「必须成立的断言」，自动化断言全部
 基于**像素**（逐横向带统计非白像素比例 / 指定颜色像素计数 / 像素签名

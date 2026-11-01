@@ -24,7 +24,7 @@
 ### 关于「本地能跑」≠「提交能跑」
 
 所有 E2E 测的是 unpacked 目录，但 CWS 收的是 zip。zip 本身也有独立测试
-（`test-infra/e2e/playwright-packaged-zip.spec.ts`：从 zip 解压出来装进
+（`e2e/playwright-packaged-zip.spec.ts`：从 zip 解压出来装进
 Chrome 跑真实截图）。**提审时用 CI 产出的那个 zip，别用本地重打的。**
 
 ---
@@ -84,6 +84,31 @@ Chrome 跑真实截图）。**提审时用 CI 产出的那个 zip，别用本地
 
 > 📌 4 张截图是**同一个扩展**的 4 个功能状态（整页 / 区域 / 进度 / 结果），
 > 展示顺序按编号排。商店会缩到 640×400 显示，所以别放小字。
+
+> ⚠️ **只传 `screenshots/` 里的 4 张 PNG。**
+> `store-assets/meta/` 是给 CI 守门用的 sidecar（记录拍图那一刻的真实状态），
+> **不要上传到 CWS**。
+
+#### `store-assets/meta/` 是什么
+
+E2E 每次重新拍图时，会把**拍图那一刻的采集进度**写进
+`store-assets/meta/03-capture-progress.json`：
+
+```json
+{ "i": 1, "total": 5 }
+```
+
+守门（`utils/__tests__/store-assets-consistency.test.ts`）拿这个和
+**图片里的像素**对账：文字写「2 / 5」（40%），进度条就也得填 40%。
+
+为什么要有这个文件：
+
+- `total`（切片总数）取决于测试页有多高，**不是常量**，写死会悄悄漂；
+- 以前就是这里出的事 —— E2E 在 CSS 动画中间截图，
+  文字写 40%、进度条只填 35.2%，**这张图直接提交给审核员了**。
+
+meta 是「拍图那一刻的真实状态」，像素是「拍图那一刻的真实画面」——
+两者对不上，说明画面是坏的。
 
 ### 3.3 本地化（关键，别漏）
 
@@ -241,9 +266,11 @@ Account 页和这里两处。
 ```bash
 cd projects/gofullpage-clone/shotly
 pnpm build && pnpm zip && pnpm test          # 246 单测
-cd ../test-infra
 pnpm exec playwright test e2e/                # 29 E2E
 ```
+
+> ⚠️ E2E 以前住在 workspace 仓库的 `test-infra/`，现在就在**本仓库**的
+> `e2e/`（这样 CI 才跑得到）。旧路径已经不能用了。
 
 或直接看 CI：https://github.com/weihongdago/shotly/actions
 （最新一次绿 = 产物就是对的，下载 `shotly-chrome-zip` artifact 即可提交）

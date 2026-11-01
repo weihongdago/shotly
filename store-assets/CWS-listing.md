@@ -94,7 +94,7 @@ listing **永远不会展示给中文用户**——商店按扩展自己声明�
 > 两条路不互斥——原文档把它们当成二选一是错的：**A 解决“商店能不能展示中文 listing”，
 > B 解决“界面语言跟 listing 对不对得上”。** 两个问题同时存在，就两个都修。
 
-**回归锁定**：`test-infra/e2e/playwright-i18n.spec.ts`（5 用例，真实浏览器）——
+**回归锁定**：`e2e/playwright-i18n.spec.ts`（5 用例，真实浏览器，CI 每次 push 都跑）——
 manifest 声明 / en-US→英文 / zh-CN→中文 / 手动切换并持久化 / 区域浮层跟随语言。
 
 **v1.0 范围决定**：只交 **English + 中文（简体）** 两份 listing。
@@ -104,7 +104,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 
 ## 5. 功能截图（4 张，已产出）
 
-拍摄方式：`test-infra/e2e/playwright-store-screenshots.spec.ts`，真实 Chrome 加载
+拍摄方式：`e2e/playwright-store-screenshots.spec.ts`，真实 Chrome 加载
 构建产物后运行，**画面里的每一个产品像素都是实拍的**，版式里只有文字说明。
 
 | # | 文件 | 内容 |
@@ -155,7 +155,7 @@ PRD 里提到的日语 / 西班牙语留到 v1.1——界面都还没做那两�
 - [x] 4 张功能截图补齐（1280×800，真实浏览器产出）
 - [x] 2 份 listing 文本补齐（English + 中文（简体）→ 见第 9 节）
 - [x] listing ↔ 实现 一致性守卫（vitest 版在 CI 每次 push 都跑，15 用例；另有 Playwright 版 4 用例）
-- [x] 隐私承诺运行时断言（`test-infra/e2e/playwright-privacy-no-network.spec.ts`，2 用例）——「不上传不追踪」是被测的，不是被声称的
+- [x] 隐私承诺运行时断言（`e2e/playwright-privacy-no-network.spec.ts`，2 用例）——「不上传不追踪」是被测的，不是被声称的
 - [ ] 开发者账号 $5 注册费到账
 - [x] 版本号 = 0.1.0，商店描述写「Free & open source」
 

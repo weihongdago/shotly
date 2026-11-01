@@ -26,7 +26,7 @@
  * ## 数字从哪来
  *
  * - 单测数 / 一致性守卫用例数：`vitest list`（只列举，不执行，快）
- * - E2E 数：`playwright test --list`（在 test-infra 里；不在就跳过并**明确说出来**）
+ * - E2E 数：`playwright test --list`（在本仓库的 e2e/ 里；数不到就**硬失败**）
  * - 详细说明字符数：直接数字符
  *
  * ⚠️ 不用 `grep -c "test("` 数源码 —— 那种数法会把 `test.each`、
@@ -96,17 +96,23 @@ function consistencyGuardCount() {
 
 // ─── E2E 数 ───────────────────────────────────────────────────────────────────
 //
-// E2E 在**另一个目录**（test-infra/），不在本仓库里 —— 本仓库的 CI
-// 跑不了 Playwright（没装浏览器，也没这个目录）。
-// 所以这里能数的就数，数不到就**明说**，不假装数到了。
+// E2E 现在就在本仓库的 e2e/ 里（以前住在 workspace 仓库的 test-infra/，
+// 搬进来的原因：守门不在 CI 里跑 = 守门不存在）。
+//
+// ⚠️ 搬过来之后这里必须跟着改 —— 原来指向 '../test-infra'，
+//    那个目录没了，e2eCount() 就一直返回 null，
+//    于是提审文档里的「N 条 E2E」**变成了没人验的数字**（静默失效）。
+//
+// 所以现在指向本仓库的 e2e/；数不到就**硬失败**（见主流程里的断言），
+// 不假装数到了。
 
 /** @returns {number | null} */
 function e2eCount() {
-  const infra = resolve(root, '..', 'test-infra');
-  if (!existsSync(infra)) return null;
+  const e2eDir = resolve(root, 'e2e');
+  if (!existsSync(e2eDir)) return null;
   try {
     const out = execFileSync('pnpm', ['exec', 'playwright', 'test', 'e2e/', '--list'], {
-      cwd: infra,
+      cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -192,11 +198,28 @@ const chars = detailedDescriptionChars();
 console.log('实测数字：');
 console.log(`  单测用例数        ${unit ?? '（数不到）'}`);
 console.log(`  一致性守门用例数  ${guard ?? '（数不到）'}`);
-console.log(`  E2E 用例数        ${e2e ?? '（数不到 —— test-infra/ 不在本仓库，CI 也跑不了）'}`);
+console.log(`  E2E 用例数        ${e2e ?? '（数不到 —— playwright 不可用）'}`);
 console.log(`  详细说明字符数    ${chars ?? '（数不到）'}`);
 
 if (unit == null) {
   console.error('\n✗ 连单测数都数不到（vitest list 失败）—— 检查方式失效了，拒绝同步。');
+  process.exit(1);
+}
+
+// ⚠️ E2E 数也必须是硬失败，不能「数不到就跳过」。
+//
+//    E2E 已经搬进本仓库（e2e/），`playwright test --list` 不需要浏览器，
+//    只靠 node_modules 就能跑 —— 数不到就说明**环境或路径坏了**，
+//    不是「这个数字不重要」。
+//
+//    之前这里写的是 `if (e2e != null)` —— 数不到就跳过编辑，
+//    提审文档里的「N 条 E2E」就**再也没人核对**，而 CI 照样绿。
+//    这就是「守门静默失效」的标准形态。
+if (e2e == null) {
+  console.error(
+    '\n✗ E2E 用例数数不到（playwright test e2e/ --list 失败）—— ' +
+      '提审文档里的 E2E 数没人核对，拒绝同步。',
+  );
   process.exit(1);
 }
 
@@ -211,18 +234,16 @@ runbookEdits.push({
   value: String(unit),
   what: '手册里的单测数',
 });
-if (e2e != null) {
-  runbookEdits.push({
-    anchor: 'playwright test e2e/',
-    value: String(e2e),
-    what: '手册里的 E2E 数',
-  });
-  runbookEdits.push({
-    anchor: '个功能全部可用，有 ',
-    value: String(e2e),
-    what: '手册里的 E2E 数（拒因应对表）',
-  });
-}
+runbookEdits.push({
+  anchor: 'playwright test e2e/',
+  value: String(e2e),
+  what: '手册里的 E2E 数',
+});
+runbookEdits.push({
+  anchor: '个功能全部可用，有 ',
+  value: String(e2e),
+  what: '手册里的 E2E 数（拒因应对表）',
+});
 if (chars != null) {
   runbookEdits.push({
     anchor: '**第 3 节**代码块内容（英文） | ',
