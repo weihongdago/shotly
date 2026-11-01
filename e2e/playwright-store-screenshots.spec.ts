@@ -178,6 +178,32 @@ async function composeStoreImage(
       ${panels}
     </body></html>`,
   );
+  /**
+   * ⚠️ 截图前必须等「资源真正可用」，不能用固定时长赌。
+   *
+   * 这里的图都是**大 PNG**：`_raw-capture.png` 是 1280×3521 的整页长图，
+   * `object-fit: cover` 会把它缩到面板里。Chrome 对大图是**渐进解码**的 ——
+   * 解码和缩放流水进行，截图那一刻可能只解了一部分，
+   * 于是缩放出来的像素和「全部解完」时差 ±1。
+   *
+   * 后果：04 每次重新生成都差 409 个通道（±1），
+   * `git status` 永远有一张图是脏的 —— 素材没法版本化，
+   * 提交给 Chrome Web Store 的是哪一版说不清。
+   *
+   * `img.decode()` 的语义正好是「完全解码可用」，比 waitForTimeout 准。
+   * 字体同理：`document.fonts.ready`。
+   */
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    const imgs = Array.from(document.images);
+    await Promise.all(
+      imgs.map((img) =>
+        img.decode().catch(() => {
+          /* 解码失败不致命 —— 图可能还没挂上 */
+        }),
+      ),
+    );
+  });
   await page.waitForTimeout(400);
   const buf = await page.screenshot({ type: 'png' });
   writeFileSync(join(OUT_DIR, opts.file), buf);
