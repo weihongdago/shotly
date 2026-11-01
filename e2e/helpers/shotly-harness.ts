@@ -21,6 +21,40 @@ export const SHOTLY_BUILT = resolve(process.cwd(), '.output', 'chrome-mv3');
 export const TEST_PAGE_DIR = resolve(process.cwd(), 'e2e', 'test-pages');
 export const POC_FIXTURE_DIR = resolve(process.cwd(), 'poc-d3', 'fixtures');
 
+/**
+ * 「怎么把 Chromium 跑起来」的唯一权威答案。
+ *
+ * ## 背景：两种无头，两种命运
+ *
+ * Playwright 的 `headless: true` 用的是**旧的** headless shell ——
+ * 它**加载不了扩展**（serviceWorkers = 0，扩展根本不会启动）。
+ * 所以下面一律传 `headless: false`，headless 由我们自己用
+ * Chromium 官方的 `--headless=new` 开关来控制。
+ *
+ * `--headless=new` 才是真正的 headless Chrome：支持扩展，SW 能正常启动。
+ *
+ * ## 为什么要按环境切换
+ *
+ * 本地（macOS）有显示器，默认跑 **headful** —— 要看真实窗口行为，
+ * 而且 headful 才是用户实际遇到的渲染路径。
+ *
+ * CI（GitHub ubuntu runner）**没有 X server**，headful 会直接报：
+ *     Missing X server or $DISPLAY
+ *     The platform failed to initialize. Exiting.
+ * 于是 CI 里必须切到 `--headless=new`。
+ *
+ * ⚠️ 这个坑踩过：4 个 spec 各自直接调 `chromium.launchPersistentContext`，
+ *    写死 `headless: false`，**绕过了** harness 里已有的 CI 自动判断 ——
+ *    结果 CI 里 8 个用例全挂、3 个静默跳过，而本地全绿。
+ *    现在所有 spec 都从这里取参数，不会再分叉。
+ */
+export const CHROMIUM_LAUNCH = {
+  /** 永远传 false —— 真正的 headless 靠下面的 args。 */
+  playwrightHeadless: false,
+  /** 环境相关的额外启动参数。 */
+  envArgs: process.env.CI ? ['--headless=new'] : [],
+} as const;
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -155,7 +189,12 @@ export async function launchShotly(opts: HarnessOptions = {}): Promise<ShotlyHar
   const extensionPath = opts.extensionPath ?? SHOTLY_BUILT;
   // CI 没有显示器 → 自动切到 Chromium 的 --headless=new。
   // 本地默认还是 headful（要看真实窗口行为）。
-  const useHeadless = opts.headless ?? !!process.env.CI;
+  //
+  // ⚠️ 判据只从 CHROMIUM_LAUNCH.envArgs 取，不要再单独写一份
+  //    `process.env.CI ? ... : ...` —— 两份判据迟早会分叉，
+  //    分叉出来的结果就是「本地全绿、CI 全挂」这种最难查的差异。
+  //    调用方仍可用 opts.headless 强制覆盖（本地想跑 headless 时用）。
+  const useHeadless = opts.headless ?? CHROMIUM_LAUNCH.envArgs.length > 0;
 
   const context = await chromium.launchPersistentContext(userDataDir, {
     // 必须用 Playwright 自带 Chromium（Chrome for Testing）：Chrome stable
@@ -164,9 +203,9 @@ export async function launchShotly(opts: HarnessOptions = {}): Promise<ShotlyHar
     // headless: 传 false，但自己加 --headless=new ——
     // Playwright 的 headless:true 用的是**旧** headless shell，加载不了扩展。
     // Chromium 的 --headless=new 才是真 headless Chrome，支持扩展（CI 必需）。
-    headless: false,
+    headless: CHROMIUM_LAUNCH.playwrightHeadless,
     args: [
-      ...(useHeadless ? ['--headless=new'] : []),
+      ...(useHeadless ? CHROMIUM_LAUNCH.envArgs : []),
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
       '--no-first-run',

@@ -2,6 +2,7 @@ import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
 
 // 注：本仓库是 ESM (package.json "type": "module")，不能用 __dirname。
 // 用 process.cwd() 假定 `pnpm test` 始终从 shotly/ 仓库根执行。
@@ -62,8 +63,10 @@ test.describe('Shotly MV3 启动器（B3 烟雾测试）', () => {
       // 系统 Chrome（stable）会拒绝 --load-extension / --disable-extensions-except，
       // 扩展根本不会装进去（extensions-item 数量 = 0，extensionId 提取失败）。
       // 见 playwright.config.ts 中同名注释（2026-10-25 修复）。
-      headless: false,
+      headless: CHROMIUM_LAUNCH.playwrightHeadless,
       args: [
+        // CI 没有 X server —— 必须用 --headless=new（本地默认 headful）。
+        ...CHROMIUM_LAUNCH.envArgs,
         `--disable-extensions-except=${SHOTLY_BUILT}`,
         `--load-extension=${SHOTLY_BUILT}`,
         '--no-first-run',

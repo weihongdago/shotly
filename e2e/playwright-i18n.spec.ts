@@ -1,6 +1,7 @@
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
 
 /**
  * Shotly 界面语言一致性（v1.0 i18n 回归）
@@ -51,10 +52,12 @@ async function startStaticServer(): Promise<{ url: string; close: () => Promise<
 /** 启动一个带扩展的持久化上下文，指定浏览器语言。 */
 async function launch(locale: string): Promise<{ context: BrowserContext; extensionId: string }> {
   const context = await chromium.launchPersistentContext('', {
-    headless: false,
+    headless: CHROMIUM_LAUNCH.playwrightHeadless,
     viewport: { width: 1280, height: 800 },
     locale,
     args: [
+      // CI 没有 X server —— 必须用 --headless=new（本地默认 headful）。
+      ...CHROMIUM_LAUNCH.envArgs,
       `--disable-extensions-except=${SHOTLY_BUILT}`,
       `--load-extension=${SHOTLY_BUILT}`,
       '--no-first-run',

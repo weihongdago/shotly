@@ -117,21 +117,40 @@ jobs:
           );
 
           /** 把指定状态的用例列出来，方便在 CI 日志里直接看。 */
+          /**
+           * 列出指定状态的用例。
+           *
+           * ⚠️ 必须**递归**遍历：Playwright 的 json reporter 里，
+           *    `describe` 是**嵌套**的 —— 一个 suite 的子 suite 藏在
+           *    `suite.suites[]` 里，spec 在更里面一层。
+           *
+           *    之前只遍历 `suites[].specs[]`（不递归），结果：
+           *    所有 spec 都在 describe 块里 → 一条都列不出来 →
+           *    CI 日志只显示「❌ 有 8 个 E2E 用例失败」然后一片空白，
+           *    根本不知道是哪 8 个。
+           *
+           *    诊断信息为空，等于没有诊断信息。
+           */
           function listTests(status) {
             const out = [];
-            for (const suite of report.suites ?? []) {
-              for (const spec of suite.specs ?? []) {
-                for (const t of spec.tests ?? []) {
-                  if (t.status === status) {
-                    let msg = '';
-                    for (const r of t.results ?? []) {
-                      if (r.errors?.[0]?.message) { msg = r.errors[0].message.split('\n')[0]; break; }
+            const walk = (suites, prefix) => {
+              for (const suite of suites ?? []) {
+                const title = [prefix, suite.title].filter(Boolean).join(' › ');
+                for (const spec of suite.specs ?? []) {
+                  for (const t of spec.tests ?? []) {
+                    if (t.status === status) {
+                      let msg = '';
+                      for (const r of t.results ?? []) {
+                        if (r.errors?.[0]?.message) { msg = r.errors[0].message.split('\n')[0]; break; }
+                      }
+                      out.push(`   [${status}] ${title} › ${spec.title}${msg ? ' — ' + msg : ''}`);
                     }
-                    out.push(`   [${status}] ${spec.title}${msg ? ' — ' + msg : ''}`);
                   }
                 }
+                walk(suite.suites, title);
               }
-            }
+            };
+            walk(report.suites, '');
             return out;
           }
 

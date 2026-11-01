@@ -18,6 +18,7 @@ import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync, statSy
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
 
 const SHOTLY_REPO = resolve(process.cwd());
 const SHOTLY_BUILT = resolve(SHOTLY_REPO, '.output', 'chrome-mv3');
@@ -297,8 +298,10 @@ test.describe('Shotly 商店素材（真实 Chrome 运行）', () => {
     staticServer = await startStaticServer();
 
     context = await chromium.launchPersistentContext(userDataDir, {
-      headless: false,
+      headless: CHROMIUM_LAUNCH.playwrightHeadless,
       args: [
+        // CI 没有 X server —— 必须用 --headless=new（本地默认 headful）。
+        ...CHROMIUM_LAUNCH.envArgs,
         `--disable-extensions-except=${SHOTLY_BUILT}`,
         `--load-extension=${SHOTLY_BUILT}`,
         '--no-first-run',

@@ -16,6 +16,7 @@ import { test, expect, chromium, type BrowserContext, type ConsoleMessage } from
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
 
 const SHOTLY_BUILT = resolve(process.cwd(), '.output', 'chrome-mv3');
 const TEST_PAGE_DIR = resolve(process.cwd(), 'e2e', 'test-pages');
@@ -140,8 +141,10 @@ test.describe('Shotly 全流程截图 E2E', () => {
       // 必须用 Playwright 自带 Chromium（Chrome for Testing）：Chrome stable
       // 拒绝 --disable-extensions-except / --load-extension，扩展加载不到。
       // Chromium 二进制路径由 Playwright 自动管理。
-      headless: false,
+      headless: CHROMIUM_LAUNCH.playwrightHeadless,
       args: [
+        // CI 没有 X server —— 必须用 --headless=new（本地默认 headful）。
+        ...CHROMIUM_LAUNCH.envArgs,
         `--disable-extensions-except=${SHOTLY_BUILT}`,
         `--load-extension=${SHOTLY_BUILT}`,
         '--no-first-run',
