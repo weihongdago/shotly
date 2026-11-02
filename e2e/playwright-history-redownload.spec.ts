@@ -61,6 +61,22 @@ test.describe('历史库 · 重新下载', () => {
   let harness: ShotlyHarness | null = null;
   let server: StaticServer | null = null;
 
+  /**
+   * ⚠️ 这个用例要比默认的 30s 久。
+   *
+   * 它做的事：启动真浏览器 → 截一次**整页**（切片 + 拼接）→
+   * 存历史 → 打开历史面板 → 触发下载 → 校验下载到的 PNG。
+   *
+   * 之前只写了 `const TIMEOUT = 120_000` 给 `waitForStatus()` 用，
+   * 但**从没把它设成这个 test 的超时** —— 于是 test 本身还是
+   * playwright.config.ts 里的 30s。CI 上一跑就
+   * 「Test timeout of 30000ms exceeded」（2026-11-01 的 E2E 失败）。
+   *
+   * 本地 macOS 快，能挤进 30s；GitHub runner 慢一点就必挂。
+   * 这就是「本地过、CI 挂」的典型：不是 flaky，是超时没配。
+   */
+  test.setTimeout(180_000);
+
   test.afterEach(async () => {
     if (harness) await closeContextSafely(harness.context);
     if (server) await server.close();
