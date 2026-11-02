@@ -405,21 +405,63 @@ test.describe('Shotly 商店素材（真实 Chrome 运行）', () => {
         // 于是 `git status` 永远有一张图是脏的 —— 素材没法版本化，
         // 审核员看到的进度条和旁边的文字也对不上。
         //
-        // 这里等两帧 + 250ms（> transition 时长），让宽度稳定下来。
-        await popupPage.waitForTimeout(250);
-        // 再确认一次：进度没在这段时间里跑完（跑完就没有进度条了）
-        const stillCapturing = await popupPage.evaluate(() => {
-          const t = (
-            window as unknown as {
-              __shotlyTest?: { getProgress: () => { i: number; total: number } | null };
+        // ⚠️ 这里**不能**用固定时长等（上一版是 waitForTimeout(250)）：
+        //
+        //   固定时长 = 赌「这 250ms 内进度不会往前走」。
+        //   采集每片大概 200-400ms，进度在等的过程中往前走一格是常事。
+        //   一旦进度从 i=1 跳到 i=2，**transition 会重新开始**，
+        //   等完 250ms 时进度条还在往新目标宽度长 ——
+        //   于是「渲染宽度」又落后于「文字声称的比例」，断言偶发失败。
+        //   （这个 spec 就是这么 flaky 过一次。）
+        //
+        // 正确做法：**轮询到稳定为止**，而且状态和宽度必须在**同一次
+        // evaluate 里一起读** —— 分两次读，中间状态可能已经变了。
+        //
+        // 判定「稳定」的标准就是业务规则本身：
+        //   渲染宽度 ≈ 状态声称的比例 (i+1)/total
+        // 等到它成立，说明动画已经追上了状态。
+        const settled = await (async () => {
+          for (let attempt = 0; attempt < 40; attempt++) {
+            const snap = await popupPage.evaluate(() => {
+              const t = (
+                window as unknown as {
+                  __shotlyTest?: { getProgress: () => { i: number; total: number } | null };
+                }
+              ).__shotlyTest;
+              const prog = t?.getProgress() ?? null;
+              const fill = document.querySelector<HTMLElement>('.bar-fill');
+              const track = document.querySelector<HTMLElement>('.bar');
+              const line = document.querySelector<HTMLElement>('.status-line');
+              if (!prog || !fill || !track) return null;
+              const f = fill.getBoundingClientRect().width;
+              const w = track.getBoundingClientRect().width;
+              return {
+                i: prog.i,
+                total: prog.total,
+                ratio: w > 0 ? f / w : 0,
+                trackWidth: w,
+                text: line?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+              };
+            });
+            if (
+              snap &&
+              snap.total > 0 &&
+              Math.abs(snap.ratio - (snap.i + 1) / snap.total) < 0.005
+            ) {
+              return snap;
             }
-          ).__shotlyTest;
-          return t?.getProgress() ?? null;
-        });
-        if (!stillCapturing) {
+            await popupPage.waitForTimeout(50);
+          }
+          return null;
+        })();
+
+        if (!settled) {
+          // 没等到稳定 —— 可能采集已经跑完（进度条没了）。
+          // 不算失败，继续循环看还有没有机会。
           await popupPage.waitForTimeout(60);
           continue;
         }
+        const stillCapturing = settled;
 
         // ⚠️ 断言：进度条的**实际填充宽度**要和旁边的**文字声称的比例**一致。
         //
@@ -453,19 +495,11 @@ test.describe('Shotly 商店素材（真实 Chrome 运行）', () => {
            * 只对 1 的话，改了文字模板（比如写成 i/total）不会被发现；
            * 只对 2 的话，状态本身算错了不会被发现。两个都才算完。
            */
-          const measured = await popupPage.evaluate(() => {
-            const fill = document.querySelector<HTMLElement>('.bar-fill');
-            const track = document.querySelector<HTMLElement>('.bar');
-            const line = document.querySelector<HTMLElement>('.status-line');
-            if (!fill || !track) return null;
-            const f = fill.getBoundingClientRect().width;
-            const t = track.getBoundingClientRect().width;
-            return {
-              ratio: t > 0 ? f / t : 0,
-              trackWidth: t,
-              text: line?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-            };
-          });
+          const measured = {
+            ratio: settled.ratio,
+            trackWidth: settled.trackWidth,
+            text: settled.text,
+          };
           expect(measured, 'popup 里找不到进度条（.bar / .bar-fill）—— UI 改了？').not.toBeNull();
 
           const expectedRatio = (stillCapturing.i + 1) / stillCapturing.total;
@@ -494,6 +528,40 @@ test.describe('Shotly 商店素材（真实 Chrome 运行）', () => {
           );
 
           await el.screenshot({ path: join(RAW_DIR, '_raw-progress.png') });
+
+          /**
+           * ⚠️ 拍完**再验一次**：截图这几十毫秒里，进度可能又往前走了一格。
+           *
+           * 如果截图那一刻状态已经从 i=1 变成 i=2，那张图拍到的是
+           * **从 40% 往 60% 长到一半**的画面 —— 又是动画中间态。
+           *
+           * 这里重新读一次：状态还是 i=1、且渲染宽度仍然对得上，
+           * 才算这张图干净。变了就重来（continue）。
+           */
+          const after = await popupPage.evaluate(() => {
+            const t = (
+              window as unknown as {
+                __shotlyTest?: { getProgress: () => { i: number; total: number } | null };
+              }
+            ).__shotlyTest;
+            const prog = t?.getProgress() ?? null;
+            const fill = document.querySelector<HTMLElement>('.bar-fill');
+            const track = document.querySelector<HTMLElement>('.bar');
+            if (!prog || !fill || !track) return null;
+            const f = fill.getBoundingClientRect().width;
+            const w = track.getBoundingClientRect().width;
+            return { i: prog.i, total: prog.total, ratio: w > 0 ? f / w : 0 };
+          });
+          if (
+            !after ||
+            after.i !== stillCapturing.i ||
+            Math.abs(after.ratio - (after.i + 1) / after.total) > 0.005
+          ) {
+            // 拍到一半了 —— 丢掉这张，下一轮重新等稳定。
+            await popupPage.waitForTimeout(60);
+            continue;
+          }
+
           /**
            * 把拍图那一刻的真实进度写下来。
            *
