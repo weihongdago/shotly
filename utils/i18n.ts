@@ -63,9 +63,10 @@ export const MESSAGES = {
     'error.downloadFailed': 'Download failed',
     'error.historyMissing': 'That screenshot is no longer in the history library',
     'error.pageTooLong': 'Page too long',
-    'error.pageTooLongReason': 'the page is {height}px tall; the limit is {limit}px',
+    'error.pageTooLongReason':
+      'the page is {height}px tall; the limit is {limit}px — try a region capture instead',
     'error.pageTooLongReasonDpr':
-      'the page is {height}px tall; at {dpr}× DPR the stitch canvas would exceed Chrome’s {max}px limit (max {limit}px)',
+      'the page is {height}px tall; at {dpr}× DPR the stitch canvas would exceed Chrome’s {max}px limit (max {limit}px) — try a region capture instead',
     'region.hint': 'Drag to select a region · min {min}×{min} · Esc to cancel',
     'region.hintPlain': 'Drag on the page to select a region · Esc to cancel',
     'region.tooSmall': 'Selection too small (min {min}×{min}px) — drag again',
@@ -100,9 +101,9 @@ export const MESSAGES = {
     'error.downloadFailed': '下载失败',
     'error.historyMissing': '这张截图已不在历史库里了',
     'error.pageTooLong': '页面太长',
-    'error.pageTooLongReason': '页面高 {height}px，上限 {limit}px',
+    'error.pageTooLongReason': '页面高 {height}px，上限 {limit}px —— 建议改用区域截图',
     'error.pageTooLongReasonDpr':
-      '页面高 {height}px；{dpr}× DPR 下拼接画布会超过 Chrome 的 {max}px 上限（最多 {limit}px）',
+      '页面高 {height}px；{dpr}× DPR 下拼接画布会超过 Chrome 的 {max}px 上限（最多 {limit}px）—— 建议改用区域截图',
     'region.hint': '拖拽框选区域 · 最小 {min}×{min} · Esc 取消',
     'region.hintPlain': '拖拽鼠标框选区域 · Esc 取消',
     'region.tooSmall': '选区太小（至少 {min}×{min}px），请重新拖拽',

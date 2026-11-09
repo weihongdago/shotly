@@ -70,10 +70,48 @@ describe('translate', () => {
   it('substitutes {placeholders}', () => {
     expect(
       translate('en', 'error.pageTooLongReason', { height: 50_001, limit: 32_767 }),
-    ).toBe('the page is 50001px tall; the limit is 32767px');
+    ).toBe('the page is 50001px tall; the limit is 32767px — try a region capture instead');
     expect(
       translate('zh', 'error.pageTooLongReason', { height: 50_001, limit: 32_767 }),
-    ).toBe('页面高 50001px，上限 32767px');
+    ).toBe('页面高 50001px，上限 32767px —— 建议改用区域截图');
+  });
+
+  /**
+   * 「页面太长」的提示必须说清楚**下一步该干什么**。
+   *
+   * ## 为什么
+   *
+   * 架构 §4（`architecture.md` 第 486/604 行）明确要求：
+   * 「总高 > 30000px：分段降级 + 用户提示『页面过长，建议区域截图』」。
+   *
+   * 实测（真实站点冒烟，2026-11-09 复测）：Wikipedia 的词条普遍在 65_000px+
+   * —— 远超 50_000px 的硬上限，所以**每一个 Wikipedia 词条都会触发这个分支**。
+   * 如果提示只说「页面太长：页面高 67169px，上限 50000px」，
+   * 用户看到的是一个「拒绝」+ 一堆数字，但不知道能怎么办 ——
+   * 而区域截图按钮就在同一个 popup 里，点一下就能解决。
+   *
+   * 只说「不行」不说「怎么办」的提示 = 用户直接放弃。
+   */
+  it('「页面太长」的提示给出了下一步（改用区域截图）', () => {
+    for (const locale of ['en', 'zh'] as const) {
+      const msg = translate(
+        locale,
+        'error.pageTooLongReason',
+        { height: 67_169, limit: 50_000 },
+      );
+      expect(
+        msg,
+        `${locale} 的「页面太长」提示没提区域截图 —— 用户不知道下一步该干什么`,
+      ).toMatch(/region|区域/i);
+    }
+
+    // DPR 版本（高 DPI 屏幕上的用户同样会遇到）
+    const dprMsg = translate(
+      'zh',
+      'error.pageTooLongReasonDpr',
+      { height: 67_169, dpr: 2, max: 65_535, limit: 32_767 },
+    );
+    expect(dprMsg, 'DPR 版本的提示也没提区域截图').toMatch(/region|区域/i);
   });
 
   it('substitutes every occurrence of a placeholder', () => {
