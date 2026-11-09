@@ -265,7 +265,7 @@ Account 页和这里两处。
 
 ```bash
 cd projects/gofullpage-clone/shotly
-pnpm build && pnpm zip && pnpm test          # 249 单测
+pnpm build && pnpm zip && pnpm test          # 260 单测
 pnpm test:e2e                                 # 34 条（合并门禁）
 pnpm test:e2e:real                            # 6 条（打真网站，每日定时跑）
 ```

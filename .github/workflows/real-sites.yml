@@ -69,6 +69,27 @@ jobs:
       - name: Run real-site smoke
         run: pnpm test:e2e:real
 
+      # ⚠️ 证据守门：「全绿」不等于「测过了」。
+      #
+      #    spec 对「网络不可达」的站点是 `test.skip(...)`，
+      #    而 Playwright 里**全部用例被 skip 时 exit code 仍是 0** →
+      #    6 个站点全挂 → workflow 绿 → artifact 照样上传。
+      #
+      #    这个 workflow 的**全部价值**就是「每天证明 Shotly 在真实网站上还活着」。
+      #    它一旦变成「每天都绿」，看的人就会得出「Shotly 在真站点上没问题」——
+      #    而这个结论可能**一个站点都没测**换来的。
+      #
+      #    「不阻塞合并」是对的（网络抖动不该把主门禁拉红）；
+      #    错的是**只做了「不阻塞」，没做「可证伪」**。
+      #    所以这里独立再判一次：报告里必须有「真的测到」的站点
+      #    （done 或 too-long —— 后者是产品的正确拒绝，也是真实结论）。
+      #
+      #    `if: !cancelled()` —— 测试那步失败时也要跑：
+      #    这时候更要看到「到底测到了几个」。
+      - name: 证据守门（真的测到了东西吗）
+        if: ${{ !cancelled() }}
+        run: node tools/check-real-sites-evidence.mjs
+
       # 报告要留下来：哪个站抓成功了、多高、多久。
       # 站点改版导致的高度变化（比如 Twitter 从 8000px 变 12000px）
       # 是需要人看的信号，不能只留一个红灯。

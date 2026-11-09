@@ -198,6 +198,32 @@ SHOTLY_PROXY=http://127.0.0.1:7897 pnpm exec playwright test --project=real-site
 实测：代理开着时，隐私守门（「零第三方请求」）**仍然有效** ——
 请求拦截器在请求离开浏览器前就能看到，第三方请求照样抓得到。
 
+#### 「不阻塞」必须同时做到「可证伪」
+
+`real-sites.yml` 里除了跑测试，还多一步**证据守门**：
+
+```bash
+node tools/check-real-sites-evidence.mjs   # = pnpm check:real-sites
+```
+
+它读 `reports/real-sites/real-sites-report.json` 并判定：
+
+| 情况 | 判定 |
+|---|---|
+| 报告不存在 / 不是合法 JSON / 一条记录都没有 | **硬失败** |
+| 全部站点网络不可达（一个都没测到） | **硬失败**（消息里说明是网络原因，不是 Shotly 的问题） |
+| 至少 1 个站点真的测到了（`done` 或 `too-long`） | 通过；只测到部分时在 summary 里写明「实测 N/6」 |
+
+⚠️ 为什么必须有这一步：spec 对「网络不可达」的站点是 `test.skip(...)`，
+而 Playwright 里**全部用例被 skip 时 exit code 仍是 0** → workflow 绿 →
+artifact 照样上传（`afterAll` 无论有没有真跑都会写报告）。
+于是「每天都绿」可能意味着**一天都没测**。
+
+> 📌 「主门禁的 skip 守门」**不覆盖**这个 workflow ——
+> 每个 workflow 的守门只管自己那套 runner。
+> 「不阻塞合并」是对的（网络抖动不该把主门禁拉红），
+> 错的是**只做了「不阻塞」，没做「可证伪」**。
+
 ### 2.4 MV3-specific 测试辅助
 
 **核心难点**：MV3 service worker 30 秒闲置被回收，需特殊测试 harness。
