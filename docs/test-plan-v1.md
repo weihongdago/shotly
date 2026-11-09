@@ -18,7 +18,8 @@
 
 > **版本**：v1.0 D+1 首版｜**日期**：2026-07-11｜**作者**：小白（dispatcher 代笔，因 M3 provider 超时）
 > **状态**：⏳ 测试工程师 24h 内校对 + 补 4 语种隐私 + 合规清单
-> **配套文档**：[PRD-v1.md](./PRD-v1.md) / [architecture.md](./architecture.md) / [ui-style-guide-v1.md](./ui-style-guide-v1.md)
+> **配套文档**：[architecture.md](./architecture.md) / [ui-style-guide-v1.md](./ui-style-guide-v1.md)
+> ｜ PRD-v1.md（产品需求文档，**内部文档，未随本仓库公开** —— 含竞品分析与定价策略）
 
 ---
 

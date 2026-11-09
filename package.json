@@ -20,7 +20,8 @@
     "test:e2e:smoke": "playwright test e2e/playwright-mv3-launcher.spec.ts",
     "test:e2e:store": "playwright test e2e/playwright-store-screenshots.spec.ts",
     "test:e2e:real": "playwright test --project=real-sites",
-    "check:real-sites": "node tools/check-real-sites-evidence.mjs"
+    "check:real-sites": "node tools/check-real-sites-evidence.mjs",
+    "check:doc-links": "node tools/check-doc-links.mjs"
   },
   "dependencies": {
     "idb": "^8.0.4",

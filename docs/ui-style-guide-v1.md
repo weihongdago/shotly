@@ -3,7 +3,8 @@
 > **文档版本**：v1.1（**PM 收口版，已同步架构 v1.2 §4.5 a11y 修正**）｜**日期**：2026-07-11｜**作者**：产品经理（📋）
 > **状态**：✅ v1.1 收口完成｜⚠️ 待设计师 D+3 出具高保真稿件后迭代为 v2
 > **核心决策锚点**：薄荷绿 **#2DD4BF**（品牌层） + teal-700/500（组件层，WCAG AA 通过）
-> **配套文档**：[PRD-v1.md](./PRD-v1.md) §4 + [architecture.md](./architecture.md) §1.5 / §4.5
+> **配套文档**：[architecture.md](./architecture.md) §1.5 / §4.5
+> ｜ PRD-v1.md §4（产品需求文档，**内部文档，未随本仓库公开** —— 含竞品分析与定价策略）
 > **🚨 v1.1 关键修订**：原 mint/500 #2DD4BF + 白字对比度仅 2.71:1 ❌（WCAG AA 要求 4.5:1），已按架构 §4.5 修正为组件层 teal-700 / teal-500 双 token，品牌色仅用于 logo / landing hero 大色块。详见 §1.5 决策记录。
 > **论据体系**：每条结论附【论据／来源／条件／争议点】
 
@@ -570,7 +571,7 @@ body { transition: background-color 200ms ease; }
 
 | 资源 | 链接 / 备注 |
 |------|------------|
-| PRD v1.1 | 同目录 PRD-v1.md |
+| PRD v1.1 | 内部文档（未随本仓库公开） |
 | 架构方案 | 同目录 architecture.md |
 | GoFullPage 首页 | chrome web store listing（用于差异化对比） |
 | Inter 字体下载 | fonts.google.com/specimen/Inter |

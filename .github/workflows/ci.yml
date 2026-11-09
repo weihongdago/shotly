@@ -119,6 +119,13 @@ jobs:
       - name: Verify store doc numbers are current
         run: node tools/sync-store-counts.mjs --check
 
+      # Markdown 的相对链接不校验，GitHub 上点开才发现是 404。
+      # 实测踩过：`docs/test-plan-v1.md` 和 `docs/ui-style-guide-v1.md`
+      # 都链到 `./PRD-v1.md`，但 PRD 是**内部文档**（含竞品分析与定价策略），
+      # 故意没放进这个公开仓库 ⇒ 两条死链。
+      - name: Verify doc links resolve
+        run: node tools/check-doc-links.mjs
+
       # ⚠️ 这只是**编译检查**，不是受支持的平台。
       #    捕获链路依赖 `chrome.offscreen`（OffscreenCanvas 拼接），
       #    Firefox 没实现这个 API（MDN browser-compat-data 里没有 offscreen 条目），
