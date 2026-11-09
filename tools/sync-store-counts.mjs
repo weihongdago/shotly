@@ -106,16 +106,65 @@ function consistencyGuardCount() {
 // 所以现在指向本仓库的 e2e/；数不到就**硬失败**（见主流程里的断言），
 // 不假装数到了。
 
-/** @returns {number | null} */
+/**
+ * E2E 数 —— **合并门禁**跑的那一批。
+ *
+ * ## 为什么是 `--project=chromium`，而不是数全部
+ *
+ * `playwright test --list`（不带 project）会把 `real-sites` project 也数进去
+ * —— 而那 6 条是**打真网站**的（GitHub / Wikipedia / X / 长博客 / SPA），
+ * 会因为限流、改版、网络抖动而失败，且**故意不阻塞合并**
+ * （见 `playwright.config.ts` 里 `real-sites` project 的注释）。
+ *
+ * 如果这里数全部，提审文档会写着「有 40 条 E2E」，
+ * 而**照着文档跑自检的人跑的是 40 条**（含真实站点）——
+ * 于是：
+ *   1. 文档里的数字和旁边那条命令**对不上**（命令跑 34 条，文档写 40）
+ *   2. 自检会因为**跟产品无关的网络问题**变红 —— 提交前最后一道关卡变成噪音
+ *
+ * 所以：数字 = **门禁那条命令实际会跑出来的数**，
+ * 真实站点那批单独数、单独写（`realSitesCount`）。
+ * 数字的意义是「你照着做能复现出这个数」。
+ *
+ * @returns {number | null}
+ */
 function e2eCount() {
   const e2eDir = resolve(root, 'e2e');
   if (!existsSync(e2eDir)) return null;
   try {
-    const out = execFileSync('pnpm', ['exec', 'playwright', 'test', 'e2e/', '--list'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
+    const out = execFileSync(
+      'pnpm',
+      ['exec', 'playwright', 'test', '--project=chromium', '--list'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    const m = out.match(/Total:\s*(\d+)\s+tests?/);
+    return m ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 真实站点冒烟的用例数（单独一批，不阻塞合并）。
+ * @returns {number | null}
+ */
+function realSitesCount() {
+  const e2eDir = resolve(root, 'e2e');
+  if (!existsSync(e2eDir)) return null;
+  try {
+    const out = execFileSync(
+      'pnpm',
+      ['exec', 'playwright', 'test', '--project=real-sites', '--list'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
     const m = out.match(/Total:\s*(\d+)\s+tests?/);
     return m ? Number(m[1]) : null;
   } catch {
@@ -194,11 +243,13 @@ const unit = unitTestCount();
 const guard = consistencyGuardCount();
 const e2e = e2eCount();
 const chars = detailedDescriptionChars();
+const realSites = realSitesCount();
 
 console.log('实测数字：');
 console.log(`  单测用例数        ${unit ?? '（数不到）'}`);
 console.log(`  一致性守门用例数  ${guard ?? '（数不到）'}`);
-console.log(`  E2E 用例数        ${e2e ?? '（数不到 —— playwright 不可用）'}`);
+console.log(`  E2E 用例数        ${e2e ?? '（数不到 —— playwright 不可用）'}（合并门禁）`);
+console.log(`  真实站点用例数    ${realSites ?? '（数不到）'}（每日定时，不阻塞合并）`);
 console.log(`  详细说明字符数    ${chars ?? '（数不到）'}`);
 
 if (unit == null) {
@@ -235,15 +286,35 @@ runbookEdits.push({
   what: '手册里的单测数',
 });
 runbookEdits.push({
-  anchor: 'playwright test e2e/',
+  // ⚠️ 锚点顺序重要：`pnpm test:e2e` 是 `pnpm test:e2e:real` 的**前缀**，
+  //    `indexOf` 会命中**第一个**出现的位置。所以阻塞那条必须**排在前面**，
+  //    否则真实站点的数字会被写到阻塞那条上（而 `pnpm test:e2e:real`
+  //    因为多了 `:real` 所以仍然是唯一的）。
+  anchor: 'pnpm test:e2e',
   value: String(e2e),
-  what: '手册里的 E2E 数',
+  what: '手册里的 E2E 数（合并门禁）',
 });
+if (realSites != null) {
+  runbookEdits.push({
+    anchor: 'pnpm test:e2e:real',
+    value: String(realSites),
+    what: '手册里的真实站点 E2E 数',
+  });
+}
 runbookEdits.push({
   anchor: '个功能全部可用，有 ',
   value: String(e2e),
   what: '手册里的 E2E 数（拒因应对表）',
 });
+if (realSites != null) {
+  runbookEdits.push({
+    // 同一行里的**第二个**数字（真实站点那批）。
+    // 同样是自动同步的 —— 不能手写，手写的数一定会漂。
+    anchor: '（合并门禁）+ ',
+    value: String(realSites),
+    what: '手册里的真实站点 E2E 数（拒因应对表）',
+  });
+}
 if (chars != null) {
   runbookEdits.push({
     anchor: '**第 3 节**代码块内容（英文） | ',
@@ -268,11 +339,52 @@ if (guard != null) {
   });
 }
 
+// ─── 测试计划文档（docs/test-plan-v1.md）──────────────────────
+//
+// ⚠️ 为什么这个文档也要自动同步：
+//    它 2026-11-08 加了「2.3 真实站点冒烟」一节，里面手写了
+//    「用例数 29」「35 条 E2E」这些数字 —— 当天就已经漂了
+//    （真实值是 34 + 6 = 40）。手抄的数字守门守不住，
+//    所以放进同一个脚本里，用同一套实测值改写。
+//
+//    锚点必须**全局唯一** —— applyReplacements 取第一个匹配，
+//    锚点撞车 = 改错地方。改这个文件前先 grep -c 确认。
+
+/** @type {Edit[]} */
+const testPlanEdits = [];
+if (e2e != null) {
+  testPlanEdits.push({
+    anchor: '| 用例数 | ',
+    value: String(e2e),
+    what: '测试计划里的主 E2E 用例数',
+  });
+  testPlanEdits.push({
+    anchor: '判定 | `expected=',
+    value: String(e2e),
+    what: '测试计划里的主 E2E 判定阈值',
+  });
+}
+if (realSites != null) {
+  testPlanEdits.push({
+    anchor: '提审文档里写的是「',
+    value: String((e2e ?? 0) + realSites),
+    what: '测试计划里的 E2E 总数',
+  });
+  testPlanEdits.push({
+    anchor: '条 E2E」= ',
+    value: String(e2e ?? 0),
+    what: '测试计划里 E2E 总数的拆分',
+  });
+}
+
 console.log(checkOnly ? '\n检查中…' : '\n同步中…');
 
 let ok = true;
 ok = applyReplacements('store-assets/SUBMIT-RUNBOOK.md', runbookEdits) && ok;
 ok = applyReplacements('store-assets/CWS-listing.md', listingEdits) && ok;
+if (testPlanEdits.length > 0) {
+  ok = applyReplacements('docs/test-plan-v1.md', testPlanEdits) && ok;
+}
 
 if (!ok) {
   console.error(

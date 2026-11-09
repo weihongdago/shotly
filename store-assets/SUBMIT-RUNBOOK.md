@@ -251,7 +251,7 @@ Account 页和这里两处。
 | 「权限过多」 | 9 条权限逐条有理由，且实测无网络请求 | 附上 §4.2 的理由表 + 隐私测试结论 |
 | 「listing 描述的功能与扩展不符」 | listing ↔ 实现一致性守门（CI 每次 push 跑） | 贴 CI 通过记录 |
 | 「隐私政策不可访问」 | GitHub Pages 已上线 | 换 `getshotly.com`（更稳） |
-| 「功能不足 / 只是个空壳」 | 6 个功能全部可用，有 29 条 E2E | 贴测试报告 |
+| 「功能不足 / 只是个空壳」 | 6 个功能全部可用，有 34 条 E2E（合并门禁）+ 6 条真实站点每日体检 | 贴测试报告 |
 | 「需要域名」 | 隐私政策 URL 现在挂在 GitHub Pages | 注册 `getshotly.com` 换上去 |
 
 > 📌 被拒后会收到邮件说明具体拒因。**改完重新提交版本号必须更大**
@@ -265,9 +265,20 @@ Account 页和这里两处。
 
 ```bash
 cd projects/gofullpage-clone/shotly
-pnpm build && pnpm zip && pnpm test          # 246 单测
-pnpm exec playwright test e2e/                # 29 E2E
+pnpm build && pnpm zip && pnpm test          # 249 单测
+pnpm test:e2e                                 # 34 条（合并门禁）
+pnpm test:e2e:real                            # 6 条（打真网站，每日定时跑）
 ```
+
+> ⚠️ **自检只跑 `pnpm test:e2e`（合并门禁），别跑 `pnpm test:e2e:real`。**
+>
+> 真实站点那 6 条打的是 GitHub / Wikipedia / X / 长博客 / SPA —— 它们会因
+> 限流、改版、网络抖动而失败，而且**故意不阻塞合并**（理由见
+> `playwright.config.ts` 里 `real-sites` project 的注释）。
+>
+> 把它们放进「提交前最后一道关卡」= 提交前会因为**跟产品无关的网络问题**
+> 变红 —— 那道门一旦变成噪音，就再也没人认真看它。
+> 它们由每日定时的 workflow 跑，结论照样进 CI 日志。
 
 > ⚠️ E2E 以前住在 workspace 仓库的 `test-infra/`，现在就在**本仓库**的
 > `e2e/`（这样 CI 才跑得到）。旧路径已经不能用了。

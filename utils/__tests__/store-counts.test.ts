@@ -28,6 +28,7 @@ import { execFileSync } from 'node:child_process';
 const ROOT = resolve(__dirname, '..', '..');
 const LISTING = resolve(ROOT, 'store-assets', 'CWS-listing.md');
 const RUNBOOK = resolve(ROOT, 'store-assets', 'SUBMIT-RUNBOOK.md');
+const TEST_PLAN = resolve(ROOT, 'docs', 'test-plan-v1.md');
 const SYNC_TOOL = resolve(ROOT, 'tools', 'sync-store-counts.mjs');
 
 /**
@@ -93,6 +94,177 @@ describe('提审文档里的测试数量', () => {
   });
 
   /**
+   * `docs/test-plan-v1.md` 里 2.3 节的 E2E 数量也必须是真的。
+   *
+   * ## 为什么
+   *
+   * 2026-11-08 那一节刚加进来时，手写了「用例数 29」「35 条 E2E」——
+   * **当天就已经漂了**（真实值是 34 + 6 = 40）。
+   *
+   * 漂的数字有两种害法：
+   *   - 偏小 → 低报自己的测试规模
+   *   - 偏大 → 读者照着文档跑，跑出来的条数对不上，文档就不可信了
+   *
+   * 这个文档现在是**活文档**（不只是历史设计稿），所以数字要自动同步。
+   * 同步脚本已经接管了它（`tools/sync-store-counts.mjs`），
+   * 这里再验一遍，让漂移在 `pnpm test` 里就暴露，而不用等 CI。
+   */
+  test('测试计划文档里的 E2E 数量 = 实际数出来的', () => {
+    const plan = readFileSync(TEST_PLAN, 'utf8');
+
+    // 主门禁（--project=chromium）与真实站点（--project=real-sites）是两批。
+    const count = (project: string): number => {
+      const out = execFileSync(
+        'pnpm',
+        ['exec', 'playwright', 'test', `--project=${project}`, '--list'],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 180_000,
+        },
+      );
+      const m = out.match(/Total:\s*(\d+)\s+tests?/);
+      if (!m) throw new Error(`数不到 ${project} 的用例数 —— playwright --list 没输出 Total`);
+      return Number(m[1]);
+    };
+
+    const blocking = count('chromium');
+    const realSites = count('real-sites');
+    expect(blocking, '主门禁用例数是 0 —— 检查方式失效了').toBeGreaterThan(10);
+    expect(realSites, '真实站点用例数是 0 —— 检查方式失效了').toBeGreaterThan(0);
+
+    const m = plan.match(/\| 用例数 \| (\d+) \| (\d+) \|/);
+    expect(m, '测试计划文档里没找到「| 用例数 | N | M |」这一行').toBeTruthy();
+    expect(Number(m![1]), '测试计划里的主 E2E 用例数过期了（跑 node tools/sync-store-counts.mjs）').toBe(
+      blocking,
+    );
+    expect(Number(m![2]), '测试计划里的真实站点用例数过期了（跑 node tools/sync-store-counts.mjs）').toBe(
+      realSites,
+    );
+
+    // 总数也必须对得上（提审文档里对外声称的那个数）
+    const total = plan.match(/提审文档里写的是「(\d+) 条 E2E」= (\d+) \+ (\d+)/);
+    expect(total, '测试计划文档里没找到 E2E 总数的表述').toBeTruthy();
+    expect(Number(total![1]), 'E2E 总数过期了').toBe(blocking + realSites);
+    expect(Number(total![2]), 'E2E 总数的拆分过期了').toBe(blocking);
+    expect(Number(total![3]), 'E2E 总数的拆分过期了').toBe(realSites);
+  });
+
+  /**
+   * 文档里「命令旁边的数字」必须是**那条命令**数出来的。
+   *
+   * ## 为什么这条守门必须存在
+   *
+   * 2026-11-09 踩过这个坑：提审手册的自检命令写的是
+   * `pnpm exec playwright test e2e/`（不带 project 过滤），
+   * 而旁边标的数字是 40 —— 但**合并门禁**只跑 `--project=chromium`（34 条）。
+   *
+   * 麻烦在于：**数字是对的**（自动同步脚本数出来的），
+   * 错的是**命令** —— 它多跑了 6 条打真网站的用例。
+   * 于是「提交前最后一道关卡」会因为限流 / 改版 / 网络抖动而红，
+   * 而那跟 Shotly 能不能提交**毫无关系**。
+   *
+   * 门禁一旦变成噪音，就再也没人认真看它 ——
+   * 那这条命令就从「守门」退化成「许愿池」。
+   *
+   * ## 自动同步为什么拦不住
+   *
+   * 同步脚本保证的是「文档里的数字 == 脚本数出来的数」。
+   * 但没人保证「脚本数的那个东西 == 文档旁边那条命令跑的东西」。
+   * 命令换成不带 project 过滤的那条，数字仍然自动同步，
+   * 守门仍然全绿 —— **文档照样是错的**。
+   *
+   * 所以这条守门直接去核对「命令 ↔ 数字」的对应关系。
+   */
+  test('手册里命令旁边的数字 = 那条命令实际跑出来的条数', () => {
+    const runbook = readFileSync(RUNBOOK, 'utf8');
+
+    /** 数某个 project 下的用例数（真跑 runner 的 --list，不数源码）。 */
+    const count = (project: string): number => {
+      const out = execFileSync(
+        'pnpm',
+        ['exec', 'playwright', 'test', `--project=${project}`, '--list'],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 180_000,
+        },
+      );
+      const m = out.match(/Total:\s*(\d+)\s+tests?/);
+      if (!m) throw new Error(`数不到 ${project} 的用例数 —— playwright --list 没输出 Total`);
+      return Number(m[1]);
+    };
+
+    /**
+     * 每条 E2E 命令对应哪个 playwright project（或者「全都要」）。
+     *
+     * ⚠️ 映射写在**这里**而不是读 package.json —— 因为要验的是
+     *    「文档里这条命令到底跑到哪些用例」，而 package.json 里的
+     *    script 字符串本身也可能被改（改成不带 --project 的形式）。
+     *    两种写法都要挡住，所以这里写死「命令 → project」的期望。
+     *
+     * ⚠️ `null` 表示「不带 project 过滤 = 全跑」——
+     *    这种命令**不能**当自检命令用（会把打真网站的那批也带上），
+     *    但它也不是不存在，所以要能算出一个数来跟文档比对。
+     */
+    const COMMAND_PROJECT: Record<string, string | null> = {
+      'pnpm test:e2e': 'chromium',
+      'pnpm test:e2e:real': 'real-sites',
+      'pnpm exec playwright test e2e/': null,
+      'pnpm exec playwright test --project=chromium': 'chromium',
+    };
+
+    // 只扫 **bash 代码块**里的行 —— 正文里的叙述性提及不算命令。
+    const bashBlocks = [...runbook.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+    expect(
+      bashBlocks.length,
+      '手册里一个 bash 代码块都没找到 —— 文档结构变了，守门失效了',
+    ).toBeGreaterThan(0);
+
+    const lines = bashBlocks
+      .flatMap((b) => b.split('\n'))
+      .filter((l) => /playwright\s+test|pnpm\s+test:e2e/.test(l));
+
+    expect(
+      lines.length,
+      '手册的 bash 代码块里一条 E2E 命令都没找到 —— 文档结构变了，守门失效了',
+    ).toBeGreaterThan(0);
+
+    for (const line of lines) {
+      // ⚠️ 命令要取**完整的一段**（`pnpm test:e2e`），
+      //    不能只取第一个空格分隔的词（那就只剩 `pnpm` 了）。
+      const cmd = line.trim().match(
+        /^(pnpm\s+test:e2e(?::real)?|pnpm\s+exec\s+playwright\s+test\s+(?:--project=\w+\s*)?e2e\/)/,
+      )?.[1];
+
+      expect(
+        cmd,
+        `手册的 bash 块里这条 E2E 命令解析不出来：「${line.trim()}」—— 守门的命令识别逻辑要跟着文档改`,
+      ).toBeDefined();
+
+      const project = COMMAND_PROJECT[cmd!];
+      expect(
+        project !== undefined,
+        `手册里出现了未登记的 E2E 命令「${cmd}」—— 请先把它登记进这条守门，否则它的数字没人验`,
+      ).toBe(true);
+
+      const actual =
+        project === null ? count('chromium') + count('real-sites') : count(project);
+
+      const annotated = line.match(/#\s*(\d+)/);
+      if (!annotated) continue; // 没标数字的命令不参与数字核对
+
+      const n = Number(annotated[1]);
+      expect(
+        n,
+        `手册里「${cmd}」旁边写的是 ${n} 条，但那条命令实际跑 ${actual} 条 —— 数字和命令口径不一致`,
+      ).toBe(actual);
+    }
+  });
+
+  /**
    * 同步脚本的锚点必须还能找到。
    *
    * 如果有人改了文档结构（比如把手册里的命令换了写法），
@@ -102,12 +274,17 @@ describe('提审文档里的测试数量', () => {
   test('同步脚本的锚点在文档里都还能找到', () => {
     const listing = readFileSync(LISTING, 'utf8');
     const runbook = readFileSync(RUNBOOK, 'utf8');
+    const plan = readFileSync(TEST_PLAN, 'utf8');
 
     const anchors: Array<{ text: string; where: string; doc: string }> = [
       { text: '`pnpm test` 全绿（', where: 'listing', doc: listing },
       { text: '一致性守卫（vitest 版在 CI 每次 push 都跑，', where: 'listing', doc: listing },
       { text: 'pnpm zip && pnpm test', where: 'runbook', doc: runbook },
       { text: '**第 3 节**代码块内容（英文） | ', where: 'runbook', doc: runbook },
+      { text: '| 用例数 | ', where: 'test-plan', doc: plan },
+      { text: '判定 | `expected=', where: 'test-plan', doc: plan },
+      { text: '提审文档里写的是「', where: 'test-plan', doc: plan },
+      { text: '条 E2E」= ', where: 'test-plan', doc: plan },
     ];
 
     for (const a of anchors) {

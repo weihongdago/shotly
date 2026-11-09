@@ -128,7 +128,77 @@ export default defineConfig({
 });
 ```
 
-### 2.3 MV3-specific 测试辅助
+### 2.3 真实站点冒烟（结论可见，但不阻塞合并）
+
+`e2e/playwright-real-sites.spec.ts` 打**真网站**（Wikipedia / GitHub / X /
+长博客 / react.dev）。
+
+**为什么需要**：其余 E2E 全部打本地 fixture。fixture 是我们自己写的
+静态 HTML —— 它证明的是「拼接算法对**我们自己造的页面**是对的」，
+证明不了「对 GitHub / Wikipedia 这种真实网站是对的」。真实站点会踩到
+fixture 碰不到的坑：懒加载、吸顶元素、虚拟滚动、跨域 iframe、大图渐进解码。
+
+**为什么不阻塞合并**：真实站点**会挂，而且经常跟 Shotly 无关**
+（限流、改版、502、网络抖动）。并进主门禁的话，主门禁的绿灯就变成
+「今天网络还行」而不是「产品是好的」—— **门禁一旦被无关因素污染，
+就再也不会被认真看了**。
+
+所以：
+
+| | 主 E2E（`e2e.yml`） | 真实站点（`real-sites.yml`） |
+|---|---|---|
+| 跑的 project | `--project=chromium` | `--project=real-sites` |
+| 用例数 | 34 | 6 |
+| 判定 | `expected=34, skipped=0, unexpected=0, flaky=0` | 同上但**不阻塞** |
+| 站点 | 本地 fixture | 真实网站 |
+| 跳过语义 | **不允许跳过** | 网络不可达 → 标注后跳过 |
+| 合并门禁 | 阻塞 | **不阻塞**（定时 workflow，失败会发通知） |
+
+> ⚠️ 「不阻塞」的实现方式：真实站点跑在**独立的定时 workflow** 里
+> （`real-sites.yml`，每天 03:11 UTC）。定时 workflow 本来就不参与
+> 合并门禁，所以**不需要** `continue-on-error` ——
+> 而加上它反而会让「红了」不触发通知，违背「不阻塞 ≠ 不跑」的初衷。
+
+两者用 Playwright 的 **project** 隔离（`chromium` / `real-sites`），
+避免真实站点的跳过污染主门禁的「0 跳过」断言。
+
+⚠️ **主门禁必须显式写 `--project=chromium`** ——
+不写的话会连 `real-sites` 一起跑，而那个 project 在「站点不可达」时
+**主动 skip**。主门禁断言 `skipped === 0`，于是「今天 Wikipedia 打不开」
+会把主门禁拉红 —— **门禁一旦被无关因素污染，就再也不会被认真看了**。
+
+> 📌 提审文档里写的是「40 条 E2E」= 34 + 6（两个 project 都算）。
+> 这个数字由 `tools/sync-store-counts.mjs` 从 `playwright test --list` 实测得出，
+> 守门在 CI 里核对，**不是手写维护的**。
+
+**「不阻塞」≠「不跑」**：失败就是真失败，不做任何粉饰。
+workflow 会把每个站点的结论写进 summary，区分「网络问题」和「产品问题」。
+
+> ⚠️ 探活**必须用浏览器**，不能用 Node 的 `fetch`。
+> Node 的 fetch 不读 macOS 系统代理 —— 实测本机开着 Clash 时，
+> Node 探 wikipedia 失败，但浏览器探同一个 URL 是 200。
+> 跟 git/curl 不读系统代理是同一个坑（见仓库 TOOLS.md）。
+
+#### 墙内网络：代理要传给**浏览器**
+
+浏览器默认读系统代理，所以本机开着 Clash 时**不加任何配置**就能跑。
+但如果系统代理没开、只有本地代理端口可用，就得显式传：
+
+```bash
+SHOTLY_PROXY=http://127.0.0.1:7897 pnpm exec playwright test --project=real-sites
+```
+
+⚠️ 代理必须传给 **Chromium 自己**（`launchShotly({ proxy })`），
+环境变量里的 `HTTP_PROXY` 对 Chromium **无效** ——
+扩展是在 Chromium 里抓图的，走的是浏览器的网络栈。
+
+⚠️ 这个环境变量**只被真实站点套件读**，harness 本身不读 ——
+主 E2E 门禁的运行环境不该被一个不相干的环境变量悄悄改变。
+
+实测：代理开着时，隐私守门（「零第三方请求」）**仍然有效** ——
+请求拦截器在请求离开浏览器前就能看到，第三方请求照样抓得到。
+
+### 2.4 MV3-specific 测试辅助
 
 **核心难点**：MV3 service worker 30 秒闲置被回收，需特殊测试 harness。
 
@@ -142,7 +212,7 @@ export async function keepSWAlive(port: chrome.runtime.Port) {
 }
 ```
 
-### 2.4 框架选型对比（论据 / 来源 / 条件 / 争议）
+### 2.5 框架选型对比（论据 / 来源 / 条件 / 争议）
 
 | 框架 | 优点 | 缺点 | 适用场景 |
 |------|------|------|----------|
