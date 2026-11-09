@@ -58,8 +58,14 @@ jobs:
 
       # ⚠️ build 必须先做完 ——
       #    几乎每个 E2E 都从 .output/chrome-mv3/ 装扩展。
-      #    没有产物时，spec 里的 test.skip 会**静默跳过**（不报错），
-      #    CI 就会绿着通过而什么都没测 —— 这是最危险的一种假绿。
+      #
+      #    「没 build / build 旧了」现在**硬失败**：
+      #    spec 里的 `assertBuildIsFresh` 会比对产物 mtime 和源码 mtime，
+      #    发现产物比源码旧就直接报错 —— 不再是静默 skip。
+      #    （静默 skip = CI 绿着通过而什么都没测，是最危险的假绿。）
+      #
+      #    剩下的 `test.skip`（zip 缺失、扩展没加载成功等）由下面的
+      #    「skipped 必须为 0」检查堵住。
       - name: Build (chrome-mv3)
         run: pnpm build
 
@@ -72,14 +78,25 @@ jobs:
       #
       # 用 json reporter 而不是 github reporter —— 因为下面要拿它来
       # 数「到底有多少用例被跳过了」（github reporter 的输出不好解析）。
+      #
+      # ⚠️ 必须限定 `--project=chromium` ——
+      #    不限定的话会连 `real-sites` project 一起跑，而那个 project
+      #    的用例在「站点不可达」时会**主动 skip**（那是网络问题，不是产品问题）。
+      #    本 workflow 的门禁是「skipped 必须为 0」，
+      #    于是「今天 Wikipedia 打不开」就会把**主门禁**拉红 ——
+      #    门禁一旦被无关因素污染，就再也不会被认真看了。
+      #    真实站点归 real-sites.yml 管（不阻塞，但结论可见）。
       - name: Run E2E
-        run: pnpm exec playwright test --reporter=json > e2e-results.json || true
+        run: pnpm exec playwright test --project=chromium --reporter=json > e2e-results.json || true
 
       # ⚠️ 假绿防线：E2E 全绿但一个都没跑，是最坏的情况。
       #
       #    spec 里的 test.skip 是**静默**的 —— 条件不满足时测试标记为
       #    skipped，exit code 还是 0。「全绿但全跳过」和「全绿且真跑过」
       #    在 exit code 上完全没区别。
+      #
+      #    （「没 build / build 旧了」已经改成硬失败了，见上面；
+      #    这里守的是剩下的那几条：zip 缺失、扩展没加载成功等。）
       #
       #    所以这里不用 exit code 判断，而是解析 json reporter 的统计：
       #    有任何用例被跳过 = 失败。CI 里不该有「可跳过的用例」——

@@ -19,10 +19,10 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { assertBuildIsFresh, SHOTLY_BUILT } from './helpers/shotly-harness';
 
-const SHOTLY_BUILT = resolve(process.cwd(), '.output', 'chrome-mv3');
 const SHOTLY_SRC = resolve(process.cwd());
 const LISTING = resolve(process.cwd(), 'store-assets', 'CWS-listing.md');
 
@@ -54,7 +54,8 @@ function readSubmittedCopy(): string {
 
 test.describe('Shotly listing ↔ 实现 一致性', () => {
   test.beforeAll(() => {
-    test.skip(!existsSync(SHOTLY_BUILT), `shotly 未 build：缺少 ${SHOTLY_BUILT}`);
+    // ⚠️ 硬失败而不是 test.skip —— 理由见 assertBuildIsFresh 的注释。
+    assertBuildIsFresh(SHOTLY_BUILT);
   });
 
   test('manifest 声明的每条 command 在 background 里都有独立分支', async () => {

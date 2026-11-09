@@ -2,7 +2,7 @@ import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
+import { CHROMIUM_LAUNCH, assertBuildIsFresh } from './helpers/shotly-harness';
 
 // 注：本仓库是 ESM (package.json "type": "module")，不能用 __dirname。
 // 用 process.cwd() 假定 `pnpm test` 始终从 shotly/ 仓库根执行。
@@ -47,7 +47,8 @@ test.describe('Shotly MV3 启动器（B3 烟雾测试）', () => {
 
   test.beforeAll(async () => {
     // Pre-condition: shotly 必须先 build
-    test.skip(!existsSync(SHOTLY_BUILT), `shotly 未 build：缺少 ${SHOTLY_BUILT}，请先 pnpm build`);
+    // ⚠️ 硬失败而不是 test.skip —— 理由见 assertBuildIsFresh 的注释。
+    assertBuildIsFresh(SHOTLY_BUILT);
 
     // 隔离 user-data-dir（用固定路径以便事后 inspect）
     const userDataDir = process.env.SHOTLY_E2E_USER_DATA_DIR

@@ -1,7 +1,7 @@
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
+import { CHROMIUM_LAUNCH, assertBuildIsFresh } from './helpers/shotly-harness';
 
 /**
  * Shotly 界面语言一致性（v1.0 i18n 回归）
@@ -85,7 +85,8 @@ async function readPopupTexts(page: import('@playwright/test').Page) {
 
 test.describe('Shotly 界面语言一致性', () => {
   test.beforeAll(() => {
-    test.skip(!existsSync(SHOTLY_BUILT), `shotly 未 build：缺少 ${SHOTLY_BUILT}`);
+    // ⚠️ 硬失败而不是 test.skip —— 理由见 assertBuildIsFresh 的注释。
+    assertBuildIsFresh(SHOTLY_BUILT);
   });
 
   test('manifest 声明 default_locale，且 _locales/ 齐备', async () => {

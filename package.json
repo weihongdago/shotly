@@ -16,9 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=chromium",
     "test:e2e:smoke": "playwright test e2e/playwright-mv3-launcher.spec.ts",
-    "test:e2e:store": "playwright test e2e/playwright-store-screenshots.spec.ts"
+    "test:e2e:store": "playwright test e2e/playwright-store-screenshots.spec.ts",
+    "test:e2e:real": "playwright test --project=real-sites"
   },
   "dependencies": {
     "idb": "^8.0.4",

@@ -11,10 +11,11 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   SHOTLY_BUILT,
+  assertBuildIsFresh,
   launchShotly,
   runCapture,
   signatureDistance,
@@ -58,7 +59,8 @@ test.describe('Shotly PoC-D3 真实浏览器五场景', () => {
      * 这里尤其重要：启动真浏览器要 120s，用默认的 30s 会随机挂。
      */
     test.setTimeout(120_000);
-    test.skip(!existsSync(SHOTLY_BUILT), `shotly 未 build：${SHOTLY_BUILT}`);
+    // ⚠️ 硬失败而不是 test.skip —— 理由见 assertBuildIsFresh 的注释。
+    assertBuildIsFresh(SHOTLY_BUILT);
     mkdirSync(REPORT_DIR, { recursive: true });
     harness = await launchShotly();
   });

@@ -14,8 +14,8 @@
  */
 
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 
 export const SHOTLY_BUILT = resolve(process.cwd(), '.output', 'chrome-mv3');
 export const TEST_PAGE_DIR = resolve(process.cwd(), 'e2e', 'test-pages');
@@ -131,6 +131,58 @@ export interface ShotlyHarness {
   close(): Promise<void>;
 }
 
+/**
+ * 站点能不能访问到。
+ *
+ * ## 为什么必须用浏览器探，不能用 Node 的 fetch
+ *
+ * 本机开着 Clash Verge（macOS 系统代理 127.0.0.1:7897）时：
+ *   - 浏览器读系统代理 → 能打开
+ *   - Node 的 fetch **不读**系统代理 → 连不上
+ *
+ * 同一个坑跟 git/curl 不读系统代理是同一个（见仓库 TOOLS.md）。
+ * 如果用 Node fetch 探活，本机会把「能访问的站」误判成「不可达」，
+ * 于是全部 skip —— 而 skip 是静默的，看绿的人以为「今天测过了」。
+ */
+export interface Reachability {
+  reachable: boolean;
+  /** HTTP 状态码（如果拿到了响应）。 */
+  status?: number;
+  /** 不可达时的原因（网络错误信息）。 */
+  reason?: string;
+}
+
+/**
+ * 用**同一个浏览器 context** 探一次站点可达性。
+ *
+ * 用 context 而不是新建 browser：代理设置、UA、证书策略都一致 ——
+ * 探活的结果要和真正抓取时看到的网络环境对得上。
+ */
+export async function probeReachability(
+  context: BrowserContext,
+  url: string,
+  timeoutMs = 30_000,
+): Promise<Reachability> {
+  const page = await context.newPage();
+  try {
+    const response = await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeoutMs,
+    });
+    const status = response?.status();
+    // 4xx/5xx 说明「服务器应答了」—— 网络是通的，只是页面不存在/报错。
+    // 这种情况应该当成**产品层面的问题**去报告，而不是「网络不可达」。
+    return { reachable: true, status };
+  } catch (err) {
+    return {
+      reachable: false,
+      reason: err instanceof Error ? err.message.split('\n')[0] : String(err),
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 export interface HarnessOptions {
   deviceScaleFactor?: number;
   viewport?: { width: number; height: number };
@@ -173,6 +225,139 @@ export interface HarnessOptions {
    * Defaults to on when `CI` is set (no display server there).
    */
   headless?: boolean;
+  /**
+   * Proxy for all browser traffic, e.g. `'http://127.0.0.1:7897'`.
+   *
+   * Why this exists: the **real-site** smoke test needs to reach
+   * Wikipedia / GitHub / X. On a machine behind the Great Firewall
+   * (or any network that blocks them) the browser can't reach those
+   * sites at all — and the test would report "Shotly can't capture
+   * GitHub", which is a **network** problem masquerading as a
+   * **product** problem.
+   *
+   * ⚠️ The proxy must be passed to the **browser**, not to `curl`/`fetch`:
+   *    the extension does the capturing inside Chromium, so Chromium's
+   *    own proxy setting is what matters. Setting `HTTP_PROXY` in the
+   *    environment does NOT make Chromium use it.
+   *
+   * ⚠️ **不读环境变量** —— 代理只由调用方显式传。
+   *    如果这里默认读 `SHOTLY_PROXY`，那么在墙内跑主 E2E 门禁时
+   *    （开发机 shell 里常驻着这个变量）会**静默地**把整套测试
+   *    挂到代理上 —— 包括隐私守门（「零第三方请求」）。
+   *    代理本身不破坏隐私守门（实测：拦截器在请求离开浏览器前就能看到，
+   *    第三方请求照样抓得到），但「门禁的环境」不该由一个不相干的环境变量决定。
+   *
+   *    需要代理的测试自己传：`launchShotly({ proxy: process.env.SHOTLY_PROXY })`。
+   */
+  proxy?: string;
+}
+
+/**
+ * 源码目录列表 —— 构建产物的“新鲜度”要比对的就是它们。
+ */
+const SOURCE_DIRS = [
+  'entrypoints',
+  'utils',
+  'components',
+  'public',
+  'wxt.config.ts',
+] as const;
+
+/**
+ * 检查构建产物是不是比源码旧。
+ *
+ * ## 为什么需要这个
+ *
+ * E2E 加载的是 **`.output/chrome-mv3`（预构建产物）**，不是源码。
+ * 所以改了 `utils/i18n.ts` 之后直接跑 E2E，测的是**旧代码** ——
+ * 而且它会正常跑、正常出结果，只是结果跟你的改动无关。
+ *
+ * 实际踩中过（2026-11-05）：改了「页面太长」的文案，
+ * 跑真实站点冒烟，断言「提示里应该建议改用区域截图」失败，
+ * 收到的还是旧文案。一度以为是产品没改对。
+ *
+ * 这比「构建失败」危险得多 —— 构建失败会停下来，
+ * 而「测的是旧代码」会**绿**（或红在一个跟你改动无关的地方）。
+ *
+ * ## 语义
+ *
+ * 抛错而不是打警告：静默的警告 = 没人看。
+ * 「测的是旧代码」必须硬失败，否则守门就是在守一个不存在的东西。
+ */
+export function assertBuildIsFresh(
+  builtDir: string = SHOTLY_BUILT,
+  sourceDirs: readonly string[] = SOURCE_DIRS,
+): void {
+  if (!existsSync(builtDir)) {
+    throw new Error(
+      `shotly 未 build：${builtDir}\n先跑 \`pnpm build\`，否则 E2E 会加载旧产物（或什么都没有）。`,
+    );
+  }
+
+  // 构建时间 = 产物里**最新的那个文件**的 mtime。
+  // 不能只看目录 mtime —— 构建只改子目录里的文件时，顶层目录 mtime 不动。
+  const builtFiles = readDirRecursive(builtDir);
+  const builtMtime = builtFiles.reduce(
+    (max, f) => Math.max(max, statSync(f).mtimeMs),
+    0,
+  );
+  const stale: string[] = [];
+
+  for (const rel of sourceDirs) {
+    const abs = resolve(process.cwd(), rel);
+    if (!existsSync(abs)) continue;
+
+    const entries = statSync(abs).isDirectory()
+      ? readDirRecursive(abs)
+      : [abs];
+
+    for (const file of entries) {
+      // 静态资源不参与构建逻辑 —— 图片变了不影响行为。
+      if (/\.(png|jpg|jpeg|svg|woff2?|ico)$/i.test(file)) continue;
+      // ⚠️ 测试文件**不算**：改一个 `*.test.ts` 不会改变构建产物，
+      //    但它比 build 新 —— 算进去会造成「假报 stale」，
+      //    而假警报比不报警更糟（狼来了）。
+      if (/\.test\.ts$/.test(file) || file.includes(`${sep}__tests__${sep}`)) continue;
+      if (statSync(file).mtimeMs > builtMtime) {
+        stale.push(file);
+      }
+    }
+  }
+
+  if (stale.length > 0) {
+    const shown = stale
+      .slice(0, 8)
+      .map((f) => `    ${resolve(process.cwd(), f).replace(process.cwd() + '/', '')}`)
+      .join('\n');
+    throw new Error(
+      [
+        `构建产物比源码旧 —— E2E 会测到旧代码：`,
+        `  构建产物：${builtDir}`,
+        `  落后的源码（最多列 8 个）：`,
+        shown,
+        stale.length > 8 ? `    …… 另有 ${stale.length - 8} 个` : '',
+        ``,
+        `先跑 \`pnpm build\` 再跑 E2E。`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+}
+
+/** 递归列目录下的所有文件（跳过 node_modules / .git）。 */
+function readDirRecursive(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...readDirRecursive(full));
+    } else if (entry.isFile()) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 export async function launchShotly(opts: HarnessOptions = {}): Promise<ShotlyHarness> {
@@ -186,6 +371,8 @@ export async function launchShotly(opts: HarnessOptions = {}): Promise<ShotlyHar
   const server = await startStaticServer();
 
   const dpr = opts.deviceScaleFactor ?? 1;
+  // 代理：只认显式传入（不读环境变量 —— 理由见 HarnessOptions.proxy 的注释）。
+  const proxy = opts.proxy;
   const extensionPath = opts.extensionPath ?? SHOTLY_BUILT;
   // CI 没有显示器 → 自动切到 Chromium 的 --headless=new。
   // 本地默认还是 headful（要看真实窗口行为）。
@@ -231,6 +418,10 @@ export async function launchShotly(opts: HarnessOptions = {}): Promise<ShotlyHar
     ],
     viewport: opts.viewport ?? { width: 1280, height: 800 },
     deviceScaleFactor: dpr,
+    // ⚠️ 代理必须传给**浏览器**（Chromium 自己的 proxy 设置）。
+    //    环境变量里的 HTTP_PROXY 对 Chromium 无效。
+    //    真实站点冒烟在墙内机器上必须走代理，否则浏览器根本连不上。
+    ...(proxy ? { proxy: { server: proxy } } : {}),
   });
 
   context.on('console', (msg) => logs.push(`[ctx] ${msg.type()}: ${msg.text()}`));

@@ -16,7 +16,7 @@ import { test, expect, chromium, type BrowserContext, type ConsoleMessage } from
 import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { CHROMIUM_LAUNCH } from './helpers/shotly-harness';
+import { CHROMIUM_LAUNCH, assertBuildIsFresh } from './helpers/shotly-harness';
 
 const SHOTLY_BUILT = resolve(process.cwd(), '.output', 'chrome-mv3');
 const TEST_PAGE_DIR = resolve(process.cwd(), 'e2e', 'test-pages');
@@ -129,7 +129,9 @@ test.describe('Shotly 全流程截图 E2E', () => {
   const popupLogs: ConsoleSink = makeConsoleSink('POPUP');
 
   test.beforeAll(async () => {
-    test.skip(!existsSync(SHOTLY_BUILT), `shotly 未 build：${SHOTLY_BUILT}`);
+    // ⚠️ 硬失败而不是 test.skip —— 「没 build 就静默跳过」会让门禁变绿，
+    //    而它其实什么都没测。构建产物比源码旧也是同理（测的是旧代码）。
+    assertBuildIsFresh(SHOTLY_BUILT);
     userDataDir = mkdtempSync(join(tmpdir(), 'shotly-e2e-'));
     mkdirSync(userDataDir, { recursive: true });
 

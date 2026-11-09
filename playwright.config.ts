@@ -39,9 +39,27 @@ export default defineConfig({
     // --disable-extensions-except 与 --load-extension，无法加载 MV3 扩展）。
     {
       name: 'chromium',
+      // ⚠️ 真实站点冒烟**不在这个 project 里**。
+      //
+      // 主 E2E workflow 的门禁是「29 条全部真跑过，没有静默跳过」。
+      // 真实站点会因外部网络（限流/改版/抖动）被跳过 ——
+      // 那会让主门禁的红灯变成「今天网络不行」，而不是「Shotly 坏了」。
+      // 门禁一被无关因素污染，大家就会习惯性忽略红灯，守门也就废了。
+      //
+      // 所以：真实站点归到单独的 project（见下），由独立的 workflow 跑，
+      // 结论照样进 CI 日志，但不参与合并门禁。
+      testIgnore: /playwright-real-sites\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // 不用 channel，让 Playwright 走 bundled Chromium
+      },
+    },
+    // ── 真实站点冒烟（打真网站，结论可见但不阻塞） ──
+    {
+      name: 'real-sites',
+      testMatch: /playwright-real-sites\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
       },
     },
     // ── Beta 通道（D+5 后启用，需要本地装了 Chrome Beta） ──

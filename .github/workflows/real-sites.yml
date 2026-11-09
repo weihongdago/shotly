@@ -1,0 +1,84 @@
+name: Real-site smoke
+
+# ⚠️ 为什么单独一个 workflow，而不是塞进 e2e.yml：
+#
+#    真实站点冒烟打的是**第三方网站**（Wikipedia / GitHub / X）。
+#    它有三个固有特性：
+#      1. 依赖网络 —— 网络抖一下就红
+#      2. 依赖站点现状 —— 对方改版 / 加广告 / 改布局，测试就红
+#      3. 慢 —— 每站十几秒到一分钟
+#
+#    所以它**不能**进阻塞 CI 的门禁。否则对方站点一改版，
+#    我们的 CI 就红，大家会开始习惯性重跑甚至忽略红灯 ——
+#    守门一旦变成噪音就等于没有。
+#
+#    但「不阻塞」不等于「不存在」。这里的做法是**定期体检**：
+#    每天定时跑一次，红了会发通知（GitHub Actions 邮件/通知）。
+#    相当于每天看一眼「Shotly 在真实网站上还活着吗」。
+#
+#    想本地跑：pnpm test:e2e:real
+
+on:
+  schedule:
+    # 每天 03:11 UTC = 北京时间 11:11。
+    # 刻意避开整点 —— 整点是所有定时任务扎堆的时候。
+    - cron: '11 3 * * *'
+  workflow_dispatch: # 也能手动触发
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-sites:
+    name: 真实站点冒烟（打真网站）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare WXT
+        run: pnpm exec wxt prepare
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # ⚠️ build 必须先做完 —— 而且必须是**当前代码**的构建。
+      #    spec 里的 `assertBuildIsFresh` 会在产物比源码旧时**硬失败**，
+      #    不会静默跳过 —— 「全绿但测的是旧产物」是最坏的假绿
+      #    （见 e2e.yml 的说明）。
+      - name: Build (chrome-mv3)
+        run: pnpm build
+
+      # 真实站点需要外网。ubuntu-latest 默认能出网；
+      # 如果哪天这个 runner 被加了出网限制，会全部失败 ——
+      # 那时候看日志就知道是网络问题，不是 Shotly 坏了。
+      - name: Run real-site smoke
+        run: pnpm test:e2e:real
+
+      # 报告要留下来：哪个站抓成功了、多高、多久。
+      # 站点改版导致的高度变化（比如 Twitter 从 8000px 变 12000px）
+      # 是需要人看的信号，不能只留一个红灯。
+      - name: Upload real-site report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-sites-report
+          path: |
+            reports/real-sites/
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: error
