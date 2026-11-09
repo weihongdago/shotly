@@ -593,6 +593,10 @@ R=负责 / A=问责 / C=咨询 / I=知情
 > **补丁作者**：测试工程师｜**补丁窗口**：D+1 24h 内｜**后续编号**：v1.1 / v1.2（D+3 + D+5 追加）
 > **补丁原则**：①不重写已有章节；②append-only，不破坏 PM 代笔的 12 章骨架；③每节标"§X.Y patch"便于追溯。
 > **配套独立文件**：`test-infra/reports/privacy-precheck-v1.md`（B4 已交付）、`test-infra/reports/static-analysis-2026-07-11.md`（B2 已交付）
+>
+> ⚠️ **路径说明**：`test-infra/` 是 **D+1 时期的 workspace 路径**（当时 E2E 还没搬进本仓库），
+> 现在该目录**不在这个公开仓库里** —— 留在内部 workspace 的 `projects/gofullpage-clone/test-infra/`。
+> 本仓库内的对应位置是 `e2e/`（E2E 已于 2026-11-02 搬入，见下方交付表）。
 
 ### 13.1 §7 patch｜隐私合规：GDPR / CCPA / 中国个保法具体条款
 
@@ -765,13 +769,13 @@ R = Responsible（执行）| A = Accountable（问责）| C = Consulted（咨询
 
 | 交付 | 路径 | 状态 | 验收 |
 |------|------|------|------|
-| **B2 静态分析脚本** | `test-infra/tools/static-analysis-check.mjs` | ✅ 已交付 | `pnpm static` 一键跑 5 项检查 |
-| **B2 静态分析报告** | `test-infra/reports/static-analysis-2026-07-11.md` | ✅ 已交付 | D+1 首跑：4 PASS / 1 WARN（无 eslint） |
+| **B2 静态分析脚本** | `test-infra/tools/static-analysis-check.mjs`（D+1 路径，现不在本仓库） | ✅ 已交付 | `pnpm static` 一键跑 5 项检查 |
+| **B2 静态分析报告** | `test-infra/reports/static-analysis-2026-07-11.md`（D+1 路径，现不在本仓库） | ✅ 已交付 | D+1 首跑：4 PASS / 1 WARN（无 eslint） |
 | **B3 Playwright 配置** | `playwright.config.ts` | ✅ 已交付 | `pnpm test:smoke` 跑 launcher |
 | **B3 Playwright MV3 launcher spec** | `e2e/playwright-mv3-launcher.spec.ts` | ✅ 已交付 | 4 个测试：装入 / 权限 / popup / chrome:// 截图 |
-| **B4 隐私预审报告** | `test-infra/reports/privacy-precheck-v1.md` | ✅ 已交付 | 红线满足：D+1 无外网上传 |
-| **B1 安装烟雾测试** | `test-infra/reports/install-smoke-test-result.md` | ⏳ D+2 必出 | 复用 B3 spec |
-| **test-infra 包** | `test-infra/package.json` | ✅ 已交付 | `pnpm i && pnpm test:smoke` |
+| **B4 隐私预审报告** | `test-infra/reports/privacy-precheck-v1.md`（D+1 路径，现不在本仓库） | ✅ 已交付 | 红线满足：D+1 无外网上传 |
+| **B1 安装烟雾测试** | `test-infra/reports/install-smoke-test-result.md`（D+1 路径，现不在本仓库） | ⏳ D+2 必出 | 复用 B3 spec |
+| **test-infra 包** | `test-infra/package.json`（D+1 路径，现不在本仓库） | ✅ 已交付 | `pnpm i && pnpm test:smoke` |
 
 ---
 
