@@ -268,7 +268,7 @@ if (unit == null) {
 //    这就是「守门静默失效」的标准形态。
 if (e2e == null) {
   console.error(
-    '\n✗ E2E 用例数数不到（playwright test e2e/ --list 失败）—— ' +
+    '\n✗ E2E 用例数数不到（playwright test --project=chromium --list 失败）—— ' +
       '提审文档里的 E2E 数没人核对，拒绝同步。',
   );
   process.exit(1);
